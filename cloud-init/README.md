@@ -152,6 +152,12 @@ from these commands.
 
 ### 5. Launch the two Cirrus Servers
 
+Do not render these Server manifests with broad `envsubst`. The cloud-init
+payload intentionally contains guest-side shell variables such as
+`${vars_device}` and `${checkout}`; broad environment substitution will replace
+those with empty strings and make cloud-init fail before provisioning starts.
+Use the targeted `${NS}` replacement below.
+
 ```bash
 perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/one-server.yml | oc apply -f -
 perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/two-server.yml | oc apply -f -
@@ -221,6 +227,28 @@ It expects existing block PVCs in the same namespace as the `Server` resources:
 | one | `one-state-persist` | OpenShell gateway/config/state and user systemd units |
 | one | `one-assets-persist` | rootless Podman container storage for OpenClaw sandbox assets |
 | two | `two-persist` | integration proxy configuration and provider credential file |
+
+These PVCs are created outside this repository by the Cirrus/MTOS storage flow.
+In the observed environment they are ordinary Kubernetes
+`PersistentVolumeClaim` objects annotated with `cirrus.ibm.com/volume-type:
+ocsBlock` and submitted by the `mtos-pipeline:mtos-controller` service account.
+No namespace-scoped Cirrus disk/volume CRD was found. After the PVC exists, the
+regular OpenShift/KubeVirt path attaches it to the VM launcher pod.
+
+The observed PVC shape is:
+
+```yaml
+storageClassName: ocs-storagecluster-ceph-rbd
+volumeMode: Block
+accessModes:
+  - ReadWriteMany
+```
+
+While iterating, refresh a persistent disk by deleting the consuming `Server`,
+waiting for its VM/VMI to disappear, refreshing or recreating the PVC through
+the same Cirrus/MTOS flow, then reapplying the `Server`. Do not delete these
+PVCs casually with raw `oc delete pvc`: the backing StorageClass uses a
+delete-style reclaim policy, so PVC deletion should be treated as data loss.
 
 ### VM one persistence
 
