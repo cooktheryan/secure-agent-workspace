@@ -70,3 +70,10 @@ Feature: VM one persistent OpenClaw state
       Given VM one has generated OpenClaw user service units
       When an OpenClaw user service fails to start
       Then provisioning reports the sandbox list and recent user service journal
+
+  Rule: While OpenClaw user services are being started, the agent playbook shall verify actual service activity before failing provisioning.
+
+    Scenario: Active OpenClaw services are accepted after noisy start output
+      Given OpenClaw user services have been requested to start
+      When the service manager reports their actual activity
+      Then provisioning continues if the required services are active

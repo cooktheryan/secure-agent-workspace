@@ -27,4 +27,9 @@ if grep -Fq 'ExecStart=/usr/bin/bash -lc' "$agent_playbook"; then
   exit 1
 fi
 
+grep -Fq 'Start openclaw services' "$agent_playbook"
+grep -Fq 'failed_when: false' "$agent_playbook"
+grep -Fq 'Verify openclaw services are active' "$agent_playbook"
+grep -Fq 'systemctl --user is-active' "$agent_playbook"
+
 echo "VM one OpenClaw listener split is configured"

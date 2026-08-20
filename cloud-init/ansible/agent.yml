@@ -1028,17 +1028,29 @@
 
         - name: Enable + start openclaw services with diagnostics
           block:
-            - name: Enable + start openclaw services
+            - name: Start openclaw services
               ansible.builtin.systemd:
                 name: "{{ item }}"
                 scope: user
                 enabled: true
                 state: started
                 daemon_reload: true
+              register: openclaw_service_start
+              failed_when: false
               loop:
                 - openclaw-sandbox.service
                 - openclaw-gateway.service
                 - openclaw-forward.service
+
+            - name: Verify openclaw services are active
+              ansible.builtin.command: >-
+                systemctl --user is-active
+                openclaw-sandbox.service
+                openclaw-gateway.service
+                openclaw-forward.service
+              register: openclaw_services_active
+              changed_when: false
+              failed_when: openclaw_services_active.rc != 0
           rescue:
             - name: Read OpenClaw user service status
               ansible.builtin.command: >-
