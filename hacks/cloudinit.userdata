@@ -1,0 +1,99 @@
+#cloud-config
+hostname: kind
+# Human SSH is handled by Cirrus MFA (lands as your w3id). The golden image's
+# default login user (cloud-user) is kept.
+users:
+  - default
+write_files:
+  # kind cluster config: bind the API server on all interfaces at :6443 and
+  # forward the Vault NodePort (30820) from the VM into the kind node container,
+  # so the two-layer exposure works: app -> NodePort 30820 -> VM:30820 ->
+  # Server.spec.ports -> OpenShift Service 'kind' -> other VMs.
+  - path: /etc/kind/cluster.yaml
+    permissions: '0644'
+    content: |
+      kind: Cluster
+      apiVersion: kind.x-k8s.io/v1alpha4
+      networking:
+        apiServerAddress: "0.0.0.0"
+        apiServerPort: 6443
+      nodes:
+        - role: control-plane
+          extraPortMappings:
+            - containerPort: 30820
+              hostPort: 30820
+              listenAddress: "0.0.0.0"
+              protocol: TCP
+runcmd:
+  # Let the golden image settle (clock/NTP, network, auto-registration).
+  - sleep 60
+  # Kernel/sysctl prerequisites for kind (container-in-container networking).
+  - |
+    modprobe br_netfilter || true
+    cat >/etc/sysctl.d/99-kind.conf <<EOF
+    fs.inotify.max_user_watches=524288
+    fs.inotify.max_user_instances=512
+    net.ipv4.ip_forward=1
+    EOF
+    sysctl --system || true
+  # Container runtime + tooling. podman comes from AppStream (already served by
+  # the host's subscription); no rhocp/OpenShift entitlement needed.
+  - for i in 1 2 3 4 5; do dnf install -y podman fuse-overlayfs jq qemu-guest-agent && break || sleep 15; done
+  # kind binary — pinned version, arch-matched, SHA256-verified, retried. A fatal
+  # exit here stops provisioning rather than proceeding with a missing/bad binary.
+  - |
+    KIND_VERSION=v0.32.0
+    case "$(uname -m)" in
+      x86_64)  K=amd64; KIND_SHA=50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54 ;;
+      aarch64) K=arm64; KIND_SHA=b92cd615e97585de8ddade28ed5cd7feb4248d717c233eea5b03c37298900f5d ;;
+      *) echo "FATAL: unsupported arch $(uname -m)" >&2; exit 1 ;;
+    esac
+    ok=
+    for i in 1 2 3 4 5; do
+      curl -fSL -o /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-${K}" \
+        && echo "${KIND_SHA}  /usr/local/bin/kind" | sha256sum -c - \
+        && { ok=1; break; }
+      echo "kind download/verify failed (attempt $i); retrying..." >&2
+      rm -f /usr/local/bin/kind; sleep 15
+    done
+    [ -n "$ok" ] || { echo "FATAL: could not install a verified kind binary" >&2; exit 1; }
+    chmod +x /usr/local/bin/kind
+  # kubectl — pinned version, arch-matched, SHA256-verified, retried.
+  - |
+    KUBECTL_VERSION=v1.36.4
+    case "$(uname -m)" in
+      x86_64)  K=amd64; KUBECTL_SHA=8b8f088da2dab964f853b38464033b1be15ede2839eca751482357c45abdd05a ;;
+      aarch64) K=arm64; KUBECTL_SHA=0ecf44450ee6063bf19dd166a103ee6df4a9034455c2abce626e6eea657d73fb ;;
+      *) echo "FATAL: unsupported arch $(uname -m)" >&2; exit 1 ;;
+    esac
+    ok=
+    for i in 1 2 3 4 5; do
+      curl -fSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${K}/kubectl" \
+        && echo "${KUBECTL_SHA}  /usr/local/bin/kubectl" | sha256sum -c - \
+        && { ok=1; break; }
+      echo "kubectl download/verify failed (attempt $i); retrying..." >&2
+      rm -f /usr/local/bin/kubectl; sleep 15
+    done
+    [ -n "$ok" ] || { echo "FATAL: could not install a verified kubectl binary" >&2; exit 1; }
+    chmod +x /usr/local/bin/kubectl
+  # Create the cluster (podman provider, rootful). Retry on transient failures.
+  - |
+    export KIND_EXPERIMENTAL_PROVIDER=podman
+    for i in 1 2 3; do
+      kind create cluster --name kind --config /etc/kind/cluster.yaml --wait 180s && break
+      echo "kind create failed (attempt $i); recreating..." >&2
+      kind delete cluster --name kind || true
+      sleep 20
+    done
+  # Export a kubeconfig for cloud-user. The in-cluster address is rewritten to
+  # the VM IP so it is usable from other VMs (add --insecure-skip-tls-verify
+  # from remote clients: the kind API cert does not include the VM IP as a SAN).
+  - |
+    export KIND_EXPERIMENTAL_PROVIDER=podman
+    IP=$(ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
+    mkdir -p /home/cloud-user/.kube
+    kind get kubeconfig --name kind > /home/cloud-user/.kube/config
+    sed "s#https://0\.0\.0\.0:6443#https://${IP}:6443#" /home/cloud-user/.kube/config > /home/cloud-user/kubeconfig
+    chown -R cloud-user:cloud-user /home/cloud-user/.kube /home/cloud-user/kubeconfig
+    chmod 600 /home/cloud-user/.kube/config /home/cloud-user/kubeconfig
+  - systemctl enable --now qemu-guest-agent || true
