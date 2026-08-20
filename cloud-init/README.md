@@ -220,6 +220,11 @@ expects an existing block PVC named `two-persist` in the same namespace as
 During VM two cloud-init:
 
 - the `two-persist` PVC is attached with disk serial `TWOPERSIST`;
+- cloud-init leaves the persistent disk untouched so VM startup stays close to
+  the known-good bootstrap path.
+
+During VM two integration provisioning:
+
 - the disk is formatted only when it has no filesystem;
 - the disk is mounted at `/var/lib/saw-persist`;
 - `/var/lib/saw-persist/etc-saw-integration` is bind-mounted to
