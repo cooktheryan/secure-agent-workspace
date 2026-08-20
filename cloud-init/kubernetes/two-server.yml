@@ -35,7 +35,7 @@ spec:
           checkout=/opt/secure-agent-workspace
           install -d -m 0755 "${checkout}"
           curl -fsSL --retry 5 --retry-delay 10 \
-            https://github.com/rh-forge/secure-agent-workspace/archive/refs/heads/main.tar.gz \
+            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/cloud-init-two-vm.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
           systemd-run --unit=saw-provision.service --setenv=HOME=/root /usr/bin/bash -c 'exec /usr/bin/ansible-playbook -i localhost, /opt/secure-agent-workspace/cloud-init/ansible/site.yml -e @/etc/openshell-saw/vars.yml > /var/log/saw-provision.log 2>&1'
   containerDiskImage: registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:master-e4b3a21-20260707-093716
