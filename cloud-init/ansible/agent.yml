@@ -120,7 +120,6 @@
           - openssh-server
           - binutils
           - nodejs
-          - python3-pip
           - xfsprogs
         state: present
       register: pkg_install
