@@ -786,6 +786,39 @@
         # command passed to `sandbox create` as a one-shot exec. Create a durable
         # Ready sandbox first; a dependent unit starts OpenClaw through sandbox
         # exec on every VM boot. This follows secure-agent-workspace PR #34.
+        - name: Write OpenClaw sandbox ensure script
+          ansible.builtin.copy:
+            dest: "{{ user_home }}/.local/bin/ensure-openclaw-sandbox"
+            mode: "0755"
+            content: |
+              #!/usr/bin/env bash
+              set -euo pipefail
+
+              export OPENSHELL_GATEWAY=openshell-local
+              export NO_COLOR=1
+
+              sandbox_state="$(
+                /usr/local/bin/openshell sandbox list \
+                  | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+              )"
+
+              if [ "${sandbox_state}" = "Ready" ]; then
+                exit 0
+              fi
+
+              if [ -n "${sandbox_state}" ]; then
+                /usr/local/bin/openshell sandbox delete {{ sandbox_name }} || true
+              fi
+
+              exec /usr/local/bin/openshell sandbox create \
+                --name {{ sandbox_name }} \
+                --from {{ trusted_sandbox_image_cfg }} \
+                --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                --no-tty \
+                --memory 12Gi \
+                --provider {{ inference_provider_name }} \
+                -- /bin/sh -c "echo sandbox-ready"
+
         - name: Write openclaw sandbox systemd user unit
           ansible.builtin.copy:
             dest: "{{ user_home }}/.config/systemd/user/openclaw-sandbox.service"
@@ -798,7 +831,7 @@
               Type=oneshot
               Environment=OPENSHELL_GATEWAY=openshell-local
               Environment=NO_COLOR=1
-              ExecStart=/usr/bin/bash -lc 'set -eu; sandbox_state="$(/usr/local/bin/openshell sandbox list | /usr/bin/awk '\''NR>1 {gsub(/\033\[[0-9;]*m/, ""); if ($1=="{{ sandbox_name }}") {print $NF; exit}}'\'')"; if [ "${sandbox_state}" = "Ready" ]; then exit 0; fi; if [ -n "${sandbox_state}" ]; then /usr/local/bin/openshell sandbox delete {{ sandbox_name }} || true; fi; exec /usr/local/bin/openshell sandbox create --name {{ sandbox_name }} --from {{ trusted_sandbox_image_cfg }} --policy {{ playbook_dir }}/files/openclaw-policy.yml --no-tty --memory 12Gi --provider {{ inference_provider_name }} -- /bin/sh -c "echo sandbox-ready"'
+              ExecStart=%h/.local/bin/ensure-openclaw-sandbox
               RemainAfterExit=true
               TimeoutStopSec=60s
 

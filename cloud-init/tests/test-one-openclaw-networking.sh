@@ -14,9 +14,17 @@ if grep -Fq 'openclaw_proxy_bind_ip.stdout' "$agent_playbook"; then
   exit 1
 fi
 
-grep -Fq 'sandbox_state=' "$agent_playbook"
+grep -Fq 'dest: "{{ user_home }}/.local/bin/ensure-openclaw-sandbox"' "$agent_playbook"
+grep -Fq 'ExecStart=%h/.local/bin/ensure-openclaw-sandbox' "$agent_playbook"
+grep -Fq 'sandbox_state="$(' "$agent_playbook"
 grep -Fq 'if [ "${sandbox_state}" = "Ready" ]; then' "$agent_playbook"
 grep -Fq '/usr/local/bin/openshell sandbox delete {{ sandbox_name }}' "$agent_playbook"
-grep -Fq '/usr/local/bin/openshell sandbox create --name {{ sandbox_name }}' "$agent_playbook"
+grep -Fq 'exec /usr/local/bin/openshell sandbox create \' "$agent_playbook"
+grep -Fq -- '--name {{ sandbox_name }} \' "$agent_playbook"
+
+if grep -Fq 'ExecStart=/usr/bin/bash -lc' "$agent_playbook"; then
+  echo "sandbox state machine should live in a script, not inline systemd ExecStart shell" >&2
+  exit 1
+fi
 
 echo "VM one OpenClaw listener split is configured"
