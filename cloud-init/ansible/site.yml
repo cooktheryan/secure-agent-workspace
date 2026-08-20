@@ -101,7 +101,13 @@
             content: "{{ integration_proxy_tls_key_pem }}"
           no_log: true
 
-        - name: Initialize canonical OpenAI credential file
+        - name: Inspect canonical OpenAI credential file
+          ansible.builtin.stat:
+            path: /etc/saw-integration/openai.key
+          register: integration_openai_key_file
+          no_log: true
+
+        - name: Initialize canonical OpenAI credential file when absent or empty
           ansible.builtin.copy:
             dest: /etc/saw-integration/openai.key
             mode: "0600"
@@ -109,6 +115,7 @@
             group: root
             content: "{{ integration_proxy_openai_key_cfg }}"
             force: true
+          when: (not integration_openai_key_file.stat.exists) or ((integration_openai_key_file.stat.size | default(0) | int) == 0)
           no_log: true
 
         - name: Write integration proxy environment

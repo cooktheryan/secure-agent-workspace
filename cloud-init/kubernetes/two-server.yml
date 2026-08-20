@@ -32,11 +32,42 @@ spec:
           done
           test -n "${vars_device}"
           mount "${vars_device}" /etc/openshell-saw
+          persist_device=""
+          for attempt in 1 2 3 4 5; do
+            persist_device="$(lsblk -rpno NAME,SERIAL | awk '$2=="TWOPERSIST"{print $1;exit}')"
+            if [ -n "${persist_device}" ]; then
+              break
+            fi
+            sleep 10
+          done
+          test -n "${persist_device}"
+          if ! blkid "${persist_device}" >/dev/null 2>&1; then
+            mkfs.xfs -f "${persist_device}"
+          fi
+          persist_uuid="$(blkid -s UUID -o value "${persist_device}")"
+          test -n "${persist_uuid}"
+          install -d -m 0750 /var/lib/saw-persist
+          if ! grep -q ' /var/lib/saw-persist ' /etc/fstab; then
+            echo "UUID=${persist_uuid} /var/lib/saw-persist xfs defaults,nofail 0 2" >> /etc/fstab
+          fi
+          mountpoint -q /var/lib/saw-persist || mount /var/lib/saw-persist
+          install -d -m 0750 /var/lib/saw-persist/etc-saw-integration
+          install -d -m 0750 /var/lib/saw-persist/var-lib-saw-integration
+          install -d -m 0750 /etc/saw-integration
+          install -d -m 0750 /var/lib/saw-integration
+          if ! grep -q ' /etc/saw-integration ' /etc/fstab; then
+            echo "/var/lib/saw-persist/etc-saw-integration /etc/saw-integration none bind,nofail 0 0" >> /etc/fstab
+          fi
+          if ! grep -q ' /var/lib/saw-integration ' /etc/fstab; then
+            echo "/var/lib/saw-persist/var-lib-saw-integration /var/lib/saw-integration none bind,nofail 0 0" >> /etc/fstab
+          fi
+          mountpoint -q /etc/saw-integration || mount /etc/saw-integration
+          mountpoint -q /var/lib/saw-integration || mount /var/lib/saw-integration
           checkout=/opt/secure-agent-workspace
           install -d -m 0755 "${checkout}"
           # Gist-based bootstrap is deprecated; use this versioned repository branch.
           curl -fsSL --retry 5 --retry-delay 10 \
-            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/cloud-init-two-vm.tar.gz \
+            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/two-persist-pvc.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
           systemd-run --unit=saw-provision.service --setenv=HOME=/root /usr/bin/bash -c 'exec /usr/bin/ansible-playbook -i localhost, /opt/secure-agent-workspace/cloud-init/ansible/site.yml -e @/etc/openshell-saw/vars.yml > /var/log/saw-provision.log 2>&1'
   containerDiskImage: registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:master-e4b3a21-20260707-093716
@@ -53,3 +84,8 @@ spec:
       volume:
         secret:
           secretName: two-vars
+    - name: persistent-state
+      serial: TWOPERSIST
+      volume:
+        persistentVolumeClaim:
+          claimName: two-persist

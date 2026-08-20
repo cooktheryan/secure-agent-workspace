@@ -210,3 +210,29 @@ https://one-userport.<namespace>.dal.dev.cirrus.ibm.com/
 Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through VM one and sends model traffic from VM one
 to VM two over the internal `Service/two:18083` path.
+
+## Experimental VM two persistence
+
+The `feat/two-persist-pvc` branch prototypes persistence for VM two only. It
+expects an existing block PVC named `two-persist` in the same namespace as
+`Server/two`.
+
+During VM two cloud-init:
+
+- the `two-persist` PVC is attached with disk serial `TWOPERSIST`;
+- the disk is formatted only when it has no filesystem;
+- the disk is mounted at `/var/lib/saw-persist`;
+- `/var/lib/saw-persist/etc-saw-integration` is bind-mounted to
+  `/etc/saw-integration`;
+- `/var/lib/saw-persist/var-lib-saw-integration` is bind-mounted to
+  `/var/lib/saw-integration`.
+
+The integration playbook then preserves any existing non-empty
+`/etc/saw-integration/openai.key`. If that file is missing or zero bytes, the
+playbook initializes it from `Secret/two-vars`.
+
+This means the provider key can survive VM two recreation without allowing a
+blank or placeholder value in `Secret/two-vars` to overwrite a working
+persisted key. Other integration configuration, such as `proxy.env` and TLS
+material, is still reconciled from `Secret/two-vars` so VM one and VM two stay
+aligned when the internal bearer or certificates are intentionally rotated.
