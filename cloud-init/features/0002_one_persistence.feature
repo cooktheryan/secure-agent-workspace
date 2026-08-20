@@ -41,3 +41,11 @@ Feature: VM one persistent OpenClaw state
       Given VM one already has an OpenClaw sandbox
       When agent provisioning runs again
       Then the existing sandbox is reused instead of deleted
+
+  Rule: While VM one exposes OpenClaw through the authenticated userport, the agent playbook shall bind the external proxy to all guest interfaces and reserve the raw OpenClaw forward for localhost.
+
+    Scenario: Authenticated userport remains reachable after VM recreation
+      Given VM one exposes OpenClaw through an authenticated userport
+      When agent provisioning configures OpenClaw network listeners
+      Then oauth2-proxy accepts userport traffic on every guest interface
+      And the raw OpenClaw forward remains available only on localhost

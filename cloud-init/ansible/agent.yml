@@ -22,6 +22,7 @@
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
     openclaw_proxy_enabled_cfg: true
     openclaw_proxy_port_cfg: "{{ userport | mandatory }}"
+    openclaw_forward_port_cfg: 18788
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
@@ -893,7 +894,7 @@
               [Service]
               Type=simple
               Environment=OPENSHELL_GATEWAY=openshell-local
-              ExecStart=/usr/local/bin/openshell forward start 127.0.0.1:18789 {{ sandbox_name }}
+              ExecStart=/usr/local/bin/openshell forward start 127.0.0.1:{{ openclaw_forward_port_cfg }} {{ sandbox_name }}
               Restart=on-failure
               RestartSec=3s
 
@@ -912,29 +913,6 @@
           ansible.builtin.file:
             path: "{{ user_home }}/.config/openshell/openclaw-proxy-cookie-secret"
             mode: "0600"
-          when: openclaw_proxy_enabled_cfg | bool
-
-        # The running VMI exposes 18789 and cannot adopt a new port without a
-        # restart. Bind the proxy only to the guest's service-reachable address
-        # so the raw OpenShell forward can safely retain 127.0.0.1:18789.
-        # ansible_default_ipv4 can resolve to Podman/NAT addresses such as
-        # 10.0.2.2, which are not reachable through the Cirrus userport.
-        - name: Resolve service-reachable VM IPv4 address for OpenClaw proxy
-          ansible.builtin.shell: |
-            set -euo pipefail
-            ip -4 -o addr show scope global \
-              | awk '$2 !~ /^(lo|podman|cni|veth|tap|br-|virbr|docker)/ { split($4, a, "/"); print a[1]; exit }'
-          args:
-            executable: /bin/bash
-          register: openclaw_proxy_bind_ip
-          changed_when: false
-          when: openclaw_proxy_enabled_cfg | bool
-
-        - name: Require service-reachable VM IPv4 address for OpenClaw proxy
-          ansible.builtin.assert:
-            that:
-              - openclaw_proxy_bind_ip.stdout | default('') | length > 0
-            fail_msg: Cannot resolve the VM primary IPv4 address for oauth2-proxy.
           when: openclaw_proxy_enabled_cfg | bool
 
         - name: Install optional Keycloak private CA
@@ -968,8 +946,8 @@
             dest: "{{ user_home }}/.config/openshell/openclaw-proxy.env"
             mode: "0600"
             content: |
-              OAUTH2_PROXY_HTTP_ADDRESS={{ openclaw_proxy_bind_ip.stdout }}:{{ openclaw_proxy_port_cfg }}
-              OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:18789
+              OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:{{ openclaw_proxy_port_cfg }}
+              OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:{{ openclaw_forward_port_cfg }}
               OAUTH2_PROXY_PROVIDER=oidc
               OAUTH2_PROXY_OIDC_ISSUER_URL={{ oidc_issuer }}
               OAUTH2_PROXY_CLIENT_ID={{ oidc_client_id }}
@@ -1040,7 +1018,7 @@
           block:
             - name: Wait for OpenClaw auth proxy readiness
               ansible.builtin.uri:
-                url: "http://{{ openclaw_proxy_bind_ip.stdout }}:{{ openclaw_proxy_port_cfg }}/ready"
+                url: "http://127.0.0.1:{{ openclaw_proxy_port_cfg }}/ready"
                 status_code: [200]
               register: openclaw_proxy_health
               until: openclaw_proxy_health.status == 200
@@ -1067,9 +1045,9 @@
 
         - name: Verify openclaw gateway health with failure diagnostics
           block:
-            - name: Wait for openclaw gateway health (host-forwarded :18789)
+            - name: Wait for openclaw gateway health through raw localhost forward
               ansible.builtin.uri:
-                url: http://127.0.0.1:18789/health
+                url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/health
                 status_code: [200]
                 return_content: true
               register: openclaw_health
@@ -1091,7 +1069,9 @@
 
             - name: Fail provisioning after OpenClaw diagnostics
               ansible.builtin.fail:
-                msg: OpenClaw gateway did not become healthy on port 18789.
+                msg: >-
+                  OpenClaw gateway did not become healthy on raw localhost
+                  forward port {{ openclaw_forward_port_cfg }}.
 
     - name: Provisioning complete
       ansible.builtin.debug:

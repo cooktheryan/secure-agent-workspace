@@ -171,6 +171,12 @@ oc -n "$NS" wait --for=condition=Ready vmi/two --timeout=10m
 The Route targets only `Service/one` port `userport`. There is intentionally
 no Route to VM two.
 
+VM one reserves the browser-facing userport for the authenticated proxy. The
+raw OpenClaw gateway forward stays localhost-only on `127.0.0.1:18788`, and
+oauth2-proxy listens on `0.0.0.0:18789` before proxying to that local forward.
+This avoids binding the browser route to a guest IP address that can change
+when the VM is recreated.
+
 ```bash
 oc -n "$NS" wait --for=jsonpath='{.metadata.name}'=one service/one --timeout=10m
 
