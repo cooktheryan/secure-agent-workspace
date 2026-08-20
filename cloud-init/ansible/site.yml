@@ -19,13 +19,7 @@
 
     - name: Install shared packages
       ansible.builtin.dnf:
-        name:
-          - ca-certificates
-          - curl
-          - jq
-          - python3
-          - python3-pip
-          - qemu-guest-agent
+        name: "{{ ['ca-certificates', 'curl', 'jq', 'python3', 'python3-pip', 'qemu-guest-agent'] if saw_vm_role_required == 'agent' else ['ca-certificates', 'python3', 'qemu-guest-agent'] }}"
         state: present
       register: shared_pkg_install
       retries: 5
@@ -157,17 +151,42 @@
             state: restarted
 
         - name: Check integration proxy process health
-          ansible.builtin.command: >
-            curl --cacert /etc/saw-integration/tls/ca.crt
-            -fsS https://127.0.0.1:{{ integration_proxy_port_cfg }}/healthz
+          ansible.builtin.shell: |
+            set -euo pipefail
+            /usr/bin/python3 - <<'PY'
+            import ssl
+            import urllib.request
+
+            context = ssl.create_default_context(cafile="/etc/saw-integration/tls/ca.crt")
+            with urllib.request.urlopen(
+                "https://127.0.0.1:{{ integration_proxy_port_cfg }}/healthz",
+                context=context,
+                timeout=10,
+            ) as response:
+                if response.status != 200:
+                    raise SystemExit(f"unexpected health status {response.status}")
+            PY
           changed_when: false
 
         - name: Check integration proxy readiness before provider injection
-          ansible.builtin.command: >
-            curl --cacert /etc/saw-integration/tls/ca.crt
-            -sS -o /tmp/saw-integration-readyz.out
-            -w '%{http_code}'
-            https://127.0.0.1:{{ integration_proxy_port_cfg }}/readyz
+          ansible.builtin.shell: |
+            set -euo pipefail
+            /usr/bin/python3 - <<'PY'
+            import ssl
+            import urllib.error
+            import urllib.request
+
+            context = ssl.create_default_context(cafile="/etc/saw-integration/tls/ca.crt")
+            try:
+                with urllib.request.urlopen(
+                    "https://127.0.0.1:{{ integration_proxy_port_cfg }}/readyz",
+                    context=context,
+                    timeout=10,
+                ) as response:
+                    print(response.status)
+            except urllib.error.HTTPError as exc:
+                print(exc.code)
+            PY
           register: integration_readyz
           changed_when: false
           failed_when: integration_readyz.stdout not in ['200', '503']
