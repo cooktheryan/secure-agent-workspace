@@ -60,6 +60,31 @@ The following values are not secrets and may be documented in the PR:
 - OpenClaw allowed browser identities, for example `alice`.
 - The internal Service URL from VM one to VM two.
 
+## Reference names and how to change them
+
+Several names in these assets are intentionally coupled across OpenShift,
+KubeVirt/Cirrus, cloud-init, TLS, and Ansible. They are safe to change, but
+change the complete reference set together.
+
+| Reference | Default | Used by | If you change it |
+| --- | --- | --- | --- |
+| Agent VM `Server`/Service name | `one` | `kubernetes/one-server.yml`, `Route/one-userport`, operator commands | Rename the Server, route target service, route hostname convention, and any operator commands that reference `server/one`, `vmi/one`, or `svc/one`. |
+| Integration VM `Server`/Service name | `two` | `kubernetes/two-server.yml`, VM one `inference_endpoint_url`, integration TLS SANs | Rename the Server and update VM one to call `https://<new-name>.<namespace>.svc.cluster.local:18083/v1`; regenerate the integration TLS certificate for the new DNS names. |
+| Browser route name and host | `one-userport`, `one-userport.<namespace>.dal.dev.cirrus.ibm.com` | Route creation, Keycloak redirect URI/web origin, `openclaw_route_origin`, `openclaw_proxy_redirect_url` | Update Keycloak redirect/web-origin settings and the corresponding values in `Secret/one-vars`. |
+| VM one state PVC | `one-state-persist` | `kubernetes/one-server.yml` | Update the `persistent-state` PVC claim name before creating `Server/one`. Existing data stays with the old PVC unless copied or recreated through the storage workflow. |
+| VM one asset PVC | `one-assets-persist` | `kubernetes/one-server.yml` | Update the `persistent-assets` PVC claim name before creating `Server/one`. This disk holds rootless container storage and OpenClaw sandbox assets. |
+| VM two persistence PVC | `two-persist` | `kubernetes/two-server.yml` | Update the `persistent-state` PVC claim name before creating `Server/two`. This disk holds the integration proxy state and provider key file. |
+| VM one disk serials | `ONESTATE`, `ONEASSETS` | `kubernetes/one-server.yml`, `ansible/agent.yml` | Change both the Cirrus mount serial and the Ansible disk discovery serial in the same commit. |
+| VM two disk serial | `TWOPERSIST` | `kubernetes/two-server.yml`, `ansible/site.yml` | Change both the Cirrus mount serial and the Ansible disk discovery serial in the same commit. |
+| Secret names | `one-vars`, `two-vars` | Server mounts in `kubernetes/*-server.yml` | Rename the Secret resources and update the `secretName` values on the matching Server manifests. |
+| OpenClaw sandbox name | `sawone` | `ansible/vars/one-vars.example.yml`, persisted OpenShell/Podman state | Changing this creates a different sandbox identity. Preserve data by migrating the old sandbox state or intentionally starting fresh. |
+
+The integration VM name is the most sensitive reference. Kubernetes Service DNS
+solves changing VM IPs, but the DNS name itself is part of the integration
+certificate trust chain. A VM one endpoint URL that says `two` must match a TLS
+certificate that is valid for `two`, `two.<namespace>.svc`, and
+`two.<namespace>.svc.cluster.local`.
+
 ## Deployment process
 
 The examples below assume a namespace stored in `NS`. They deliberately write

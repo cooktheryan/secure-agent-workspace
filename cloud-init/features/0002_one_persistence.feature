@@ -49,3 +49,17 @@ Feature: VM one persistent OpenClaw state
       When agent provisioning configures OpenClaw network listeners
       Then oauth2-proxy accepts userport traffic on every guest interface
       And the raw OpenClaw forward remains available only on localhost
+
+  Rule: If the base image does not provide optional Python packaging tools, then the role dispatcher shall avoid installing them on VM one.
+
+    Scenario: VM one provisioning does not require python3-pip
+      Given VM one starts from the Cirrus RHEL base image
+      When role dispatch provisioning installs shared agent packages
+      Then provisioning avoids the unavailable python3-pip package
+
+  Rule: If OpenClaw user services fail to start, then the agent playbook shall report sandbox and unit diagnostics before failing.
+
+    Scenario: OpenClaw sandbox start failure includes actionable diagnostics
+      Given VM one has generated OpenClaw user service units
+      When an OpenClaw user service fails to start
+      Then provisioning reports the sandbox list and recent user service journal
