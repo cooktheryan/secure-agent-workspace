@@ -1,0 +1,34 @@
+apiVersion: cirrus.ibm.com/v1alpha1
+kind: Server
+metadata:
+  name: kind
+  # Replace with your Cirrus/OpenShift namespace.
+  namespace: rh-vm-test1
+  labels:
+    mtos.env: dev
+spec:
+  cloudInit:
+    # Inline userData exceeds the Cirrus size limit, so the NoCloud userdata
+    # lives in a Secret. apply.sh creates 'kind-cloudinit' from
+    # cloudinit.userdata (secret key: userdata).
+    secretRef:
+      name: kind-cloudinit
+  # Replace with a RHEL 9 golden container-disk image available in your registry.
+  containerDiskImage: registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:master-e4b3a21-20260707-093716
+  operatingSystem: ''
+  profile: c2.m8
+  running: true
+  ports:
+  # kube-apiserver, so the cluster can be driven with kubectl from other VMs.
+  - name: api
+    port: 6443
+    protocol: TCP
+  # Pre-wired NodePort for a Vault-class app. A NodePort Service on 30820 (also
+  # port-mapped by kind, see cloudinit.userdata) is reachable at kind:30820
+  # from other VMs in the namespace. No app is deployed at boot.
+  - name: vault
+    port: 30820
+    protocol: TCP
+  # EPHEMERAL MODE: no persistent data disk. State is lost on VMI restart.
+  # To add persistence, attach a data disk here and point podman's storage at it
+  # in cloudinit.userdata before the cluster is created.
