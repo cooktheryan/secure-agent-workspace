@@ -15,3 +15,8 @@ local-docs/
 graphify-out/
 ssh-keys/
 charts/saw-bom/scripts/__pycache__/
+
+# Local Cirrus cloud-init operator material (never commit)
+cloud-init/.secrets/
+cloud-init/kubernetes/rendered/
+cloud-init/ansible/files/__pycache__/
