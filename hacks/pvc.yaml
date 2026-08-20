@@ -1,0 +1,22 @@
+# Optional persistent data disk for durable cluster/app state (currently unused —
+# the VM runs ephemerally). Attach to the Server via
+# mounts[].volume.persistentVolumeClaim (serial MSDATA1). Ceph RBD, Block mode,
+# RWO — the canonical raw data disk for a KubeVirt VM.
+#
+# NOTE: this is a separate object from the Server; deleting/recreating the Server
+# keeps it. This account cannot create PVCs — an admin must provision it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kind-data
+  # Replace with your namespace.
+  namespace: rh-vm-test1
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Block
+  # Replace with a Block-capable storage class available in your cluster.
+  storageClassName: ocs-external-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 50Gi
