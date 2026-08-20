@@ -166,10 +166,6 @@
             target: "{{ user_home }}/.config/openshell"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
-          - source: /var/lib/saw-one-state/home-config-systemd-user
-            target: "{{ user_home }}/.config/systemd/user"
-            owner: "{{ user_name }}"
-            group: "{{ user_name }}"
           - source: /var/lib/saw-one-state/home-local-state-openshell
             target: "{{ user_home }}/.local/state/openshell"
             owner: "{{ user_name }}"
@@ -400,7 +396,6 @@
         content: |
           [Unit]
           Description=OpenShell Gateway
-          After=default.target
 
           [Service]
           Type=simple
@@ -797,7 +792,6 @@
             content: |
               [Unit]
               Description=OpenClaw gateway (openshell-managed sandbox)
-              After=default.target
 
               [Service]
               Type=oneshot

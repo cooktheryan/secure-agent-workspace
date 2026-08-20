@@ -224,7 +224,7 @@ It expects existing block PVCs in the same namespace as the `Server` resources:
 
 | VM | PVC | Purpose |
 | --- | --- | --- |
-| one | `one-state-persist` | OpenShell gateway/config/state and user systemd units |
+| one | `one-state-persist` | OpenShell gateway/config/state |
 | one | `one-assets-persist` | rootless Podman container storage for OpenClaw sandbox assets |
 | two | `two-persist` | integration proxy configuration and provider credential file |
 
@@ -264,9 +264,14 @@ During VM one agent provisioning:
 - each disk is formatted only when it has no filesystem;
 - the state disk is mounted at `/var/lib/saw-one-state`;
 - the asset disk is mounted at `/var/lib/saw-one-assets`;
-- `/etc/openshell`, OpenShell user config/state directories, and user systemd
-  units are bind-mounted from the state disk;
+- `/etc/openshell` and OpenShell user config/state directories are
+  bind-mounted from the state disk;
 - rootless Podman container storage is bind-mounted from the asset disk.
+
+User systemd unit files are intentionally not persisted. They are reproducible
+deployment artifacts and must be regenerated after the OpenShell binaries exist
+on each fresh VM root disk. Persisting them can make stale enabled units start
+too early during boot and fail before provisioning reinstalls `/usr/local/bin`.
 
 The OpenClaw sandbox unit intentionally reuses an existing Ready sandbox instead
 of deleting it on every provisioning run. That matters because OpenClaw's

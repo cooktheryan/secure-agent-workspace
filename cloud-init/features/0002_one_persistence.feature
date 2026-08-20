@@ -28,6 +28,13 @@ Feature: VM one persistent OpenClaw state
       When agent provisioning prepares OpenClaw sandbox storage
       Then VM one stores rootless container storage on the persistent disk
 
+  Rule: While VM one is recreated, the agent playbook shall regenerate user service units on the fresh root disk.
+
+    Scenario: User service units do not start before binaries are installed
+      Given VM one has persisted OpenShell state
+      When VM one starts with a fresh root disk
+      Then VM one regenerates user service units during agent provisioning
+
   Rule: While VM one uses persistent sandbox storage, the agent playbook shall preserve an existing OpenClaw sandbox.
 
     Scenario: Existing OpenClaw sandbox survives reprovisioning
