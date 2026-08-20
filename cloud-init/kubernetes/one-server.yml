@@ -34,6 +34,7 @@ spec:
           mount "${vars_device}" /etc/openshell-saw
           checkout=/opt/secure-agent-workspace
           install -d -m 0755 "${checkout}"
+          # Gist-based bootstrap is deprecated; use this versioned repository branch.
           curl -fsSL --retry 5 --retry-delay 10 \
             https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/cloud-init-two-vm.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
