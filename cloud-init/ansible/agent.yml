@@ -121,6 +121,7 @@
           - binutils
           - nodejs
           - python3-pip
+          - xfsprogs
         state: present
       register: pkg_install
       retries: 5
@@ -146,6 +147,141 @@
           # /usr/local/bin where the openshell CLI is installed. Set an explicit
           # PATH so bare `openshell` resolves for all become_user tasks.
           PATH: "{{ user_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    - name: Define VM one persistent disks
+      ansible.builtin.set_fact:
+        one_persistent_disks:
+          - serial: ONESTATE
+            mount: /var/lib/saw-one-state
+          - serial: ONEASSETS
+            mount: /var/lib/saw-one-assets
+
+    - name: Define VM one persistent bind mounts
+      ansible.builtin.set_fact:
+        one_state_bind_mounts:
+          - source: /var/lib/saw-one-state/etc-openshell
+            target: /etc/openshell
+            owner: root
+            group: root
+          - source: /var/lib/saw-one-state/home-config-openshell
+            target: "{{ user_home }}/.config/openshell"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+          - source: /var/lib/saw-one-state/home-config-systemd-user
+            target: "{{ user_home }}/.config/systemd/user"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+          - source: /var/lib/saw-one-state/home-local-state-openshell
+            target: "{{ user_home }}/.local/state/openshell"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+          - source: /var/lib/saw-one-state/home-local-share-openshell
+            target: "{{ user_home }}/.local/share/openshell"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+        one_asset_bind_mounts:
+          - source: /var/lib/saw-one-assets/home-local-share-containers
+            target: "{{ user_home }}/.local/share/containers"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+
+    - name: Combine VM one persistent bind mounts
+      ansible.builtin.set_fact:
+        one_persistent_bind_mounts: "{{ one_state_bind_mounts + one_asset_bind_mounts }}"
+
+    - name: Locate VM one persistent disks
+      ansible.builtin.shell: |
+        set -euo pipefail
+        lsblk -rpno NAME,SERIAL | awk '$2=="{{ item.serial }}"{print $1;exit}'
+      args:
+        executable: /bin/bash
+      loop: "{{ one_persistent_disks }}"
+      register: one_persistent_device_lookup
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: one_persistent_device_lookup.stdout | length > 0
+
+    - name: Build VM one persistent disk facts
+      ansible.builtin.set_fact:
+        one_persistent_devices: "{{ one_persistent_devices | default([]) + [item.item | combine({'device': item.stdout})] }}"
+      loop: "{{ one_persistent_device_lookup.results }}"
+
+    - name: Check VM one persistent disk filesystems
+      ansible.builtin.command: "blkid {{ item.device }}"
+      loop: "{{ one_persistent_devices }}"
+      register: one_persistent_blkid
+      changed_when: false
+      failed_when: false
+
+    - name: Format blank VM one persistent disks
+      ansible.builtin.command: "mkfs.xfs -f {{ item.item.device }}"
+      loop: "{{ one_persistent_blkid.results }}"
+      when: item.rc != 0
+      changed_when: true
+
+    - name: Read VM one persistent disk UUIDs
+      ansible.builtin.command: "blkid -s UUID -o value {{ item.device }}"
+      loop: "{{ one_persistent_devices }}"
+      register: one_persistent_uuid_lookup
+      changed_when: false
+
+    - name: Ensure VM one persistent mount points exist
+      ansible.builtin.file:
+        path: "{{ item.mount }}"
+        state: directory
+        mode: "0750"
+      loop: "{{ one_persistent_devices }}"
+
+    - name: Persist VM one disk mounts
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^[^#]\\S+\\s+{{ item.item.mount | regex_escape() }}\\s+"
+        line: "UUID={{ item.stdout }} {{ item.item.mount }} xfs defaults,nofail 0 2"
+        create: true
+        mode: "0644"
+      loop: "{{ one_persistent_uuid_lookup.results }}"
+
+    - name: Mount VM one persistent disks
+      ansible.builtin.command: "mount {{ item.mount }}"
+      loop: "{{ one_persistent_devices }}"
+      register: one_persistent_mount
+      changed_when: one_persistent_mount.rc == 0
+      failed_when: one_persistent_mount.rc != 0 and 'already mounted' not in one_persistent_mount.stderr
+
+    - name: Ensure VM one persistent bind sources exist
+      ansible.builtin.file:
+        path: "{{ item.source }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "0750"
+      loop: "{{ one_persistent_bind_mounts }}"
+
+    - name: Ensure VM one persistent bind targets exist
+      ansible.builtin.file:
+        path: "{{ item.target }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "0750"
+      loop: "{{ one_persistent_bind_mounts }}"
+
+    - name: Persist VM one bind mounts
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^[^#]\\S+\\s+{{ item.target | regex_escape() }}\\s+"
+        line: "{{ item.source }} {{ item.target }} none bind,nofail 0 0"
+        create: true
+        mode: "0644"
+      loop: "{{ one_persistent_bind_mounts }}"
+
+    - name: Mount VM one bind targets
+      ansible.builtin.command: "mount {{ item.target }}"
+      loop: "{{ one_persistent_bind_mounts }}"
+      register: one_persistent_bind_mount
+      changed_when: one_persistent_bind_mount.rc == 0
+      failed_when: one_persistent_bind_mount.rc != 0 and 'already mounted' not in one_persistent_bind_mount.stderr
 
     # === [1/8] Podman socket + user manager ===
     # Rootless podman needs the cpu/cpuset/io controllers delegated to the user
@@ -641,9 +777,13 @@
             - openclaw-sandbox.service
           failed_when: false
 
-        # Idempotency: a stale sandbox from a prior run makes create fail.
-        - name: Remove stale openclaw sandbox
-          ansible.builtin.command: "openshell sandbox delete {{ sandbox_name }}"
+        # Persistence: do not delete an existing sandbox during normal
+        # provisioning. The sandbox writable layer is stored under the persisted
+        # rootless Podman storage, so deleting the sandbox would discard
+        # OpenClaw's /sandbox state.
+        - name: Inspect existing OpenClaw sandbox
+          ansible.builtin.command: "openshell sandbox list"
+          register: openclaw_existing_sandboxes
           changed_when: false
           failed_when: false
 
@@ -663,9 +803,7 @@
               [Service]
               Type=oneshot
               Environment=OPENSHELL_GATEWAY=openshell-local
-              ExecStartPre=-/usr/local/bin/openshell sandbox delete {{ sandbox_name }}
-              ExecStart=/usr/local/bin/openshell sandbox create --name {{ sandbox_name }} --from {{ trusted_sandbox_image_cfg }} --policy {{ playbook_dir }}/files/openclaw-policy.yml --no-tty --memory 12Gi --provider {{ inference_provider_name }} -- /bin/sh -c "echo sandbox-ready"
-              ExecStop=-/usr/local/bin/openshell sandbox delete {{ sandbox_name }}
+              ExecStart=/usr/bin/bash -lc '/usr/local/bin/openshell sandbox list | /usr/bin/awk '\''NR>1 && $1=="{{ sandbox_name }}" && $NF=="Ready"{found=1} END{exit !found}'\'' || exec /usr/local/bin/openshell sandbox create --name {{ sandbox_name }} --from {{ trusted_sandbox_image_cfg }} --policy {{ playbook_dir }}/files/openclaw-policy.yml --no-tty --memory 12Gi --provider {{ inference_provider_name }} -- /bin/sh -c "echo sandbox-ready"'
               RemainAfterExit=true
               TimeoutStopSec=60s
 

@@ -211,11 +211,45 @@ Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through VM one and sends model traffic from VM one
 to VM two over the internal `Service/two:18083` path.
 
-## Experimental VM two persistence
+## Experimental VM persistence
 
-The `feat/two-persist-pvc` branch prototypes persistence for VM two only. It
-expects an existing block PVC named `two-persist` in the same namespace as
-`Server/two`.
+The `feat/two-persist-pvc` branch prototypes persistence for VM one and VM two.
+It expects existing block PVCs in the same namespace as the `Server` resources:
+
+| VM | PVC | Purpose |
+| --- | --- | --- |
+| one | `one-state-persist` | OpenShell gateway/config/state and user systemd units |
+| one | `one-assets-persist` | rootless Podman container storage for OpenClaw sandbox assets |
+| two | `two-persist` | integration proxy configuration and provider credential file |
+
+### VM one persistence
+
+During VM one cloud-init:
+
+- `one-state-persist` is attached with disk serial `ONESTATE`;
+- `one-assets-persist` is attached with disk serial `ONEASSETS`;
+- cloud-init leaves both persistent disks untouched so VM startup stays close to
+  the known-good bootstrap path.
+
+During VM one agent provisioning:
+
+- each disk is formatted only when it has no filesystem;
+- the state disk is mounted at `/var/lib/saw-one-state`;
+- the asset disk is mounted at `/var/lib/saw-one-assets`;
+- `/etc/openshell`, OpenShell user config/state directories, and user systemd
+  units are bind-mounted from the state disk;
+- rootless Podman container storage is bind-mounted from the asset disk.
+
+The OpenClaw sandbox unit intentionally reuses an existing Ready sandbox instead
+of deleting it on every provisioning run. That matters because OpenClaw's
+`/sandbox` data lives inside the sandbox container writable layer. Persisting
+rootless Podman storage keeps that layer available across VM recreation, but an
+explicit `openshell sandbox delete <name>` can still remove the sandbox data.
+
+### VM two persistence
+
+VM two expects an existing block PVC named `two-persist` in the same namespace
+as `Server/two`.
 
 During VM two cloud-init:
 
