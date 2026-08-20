@@ -35,12 +35,19 @@ Feature: VM one persistent OpenClaw state
       When VM one starts with a fresh root disk
       Then VM one regenerates user service units during agent provisioning
 
-  Rule: While VM one uses persistent sandbox storage, the agent playbook shall preserve an existing OpenClaw sandbox.
+  Rule: While VM one uses persistent sandbox storage, the agent playbook shall preserve an existing Ready OpenClaw sandbox.
 
-    Scenario: Existing OpenClaw sandbox survives reprovisioning
-      Given VM one already has an OpenClaw sandbox
+    Scenario: Existing Ready OpenClaw sandbox survives reprovisioning
+      Given VM one already has a Ready OpenClaw sandbox
       When agent provisioning runs again
       Then the existing sandbox is reused instead of deleted
+
+  Rule: If VM one has a persisted non-Ready OpenClaw sandbox, then the agent playbook shall replace it before creating the gateway sandbox.
+
+    Scenario: Existing Error OpenClaw sandbox is replaced
+      Given VM one has an Error OpenClaw sandbox
+      When agent provisioning prepares the gateway sandbox
+      Then the existing sandbox is deleted before sandbox creation
 
   Rule: While VM one exposes OpenClaw through the authenticated userport, the agent playbook shall bind the external proxy to all guest interfaces and reserve the raw OpenClaw forward for localhost.
 

@@ -797,7 +797,8 @@
               [Service]
               Type=oneshot
               Environment=OPENSHELL_GATEWAY=openshell-local
-              ExecStart=/usr/bin/bash -lc '/usr/local/bin/openshell sandbox list | /usr/bin/awk '\''NR>1 && $1=="{{ sandbox_name }}" && $NF=="Ready"{found=1} END{exit !found}'\'' || exec /usr/local/bin/openshell sandbox create --name {{ sandbox_name }} --from {{ trusted_sandbox_image_cfg }} --policy {{ playbook_dir }}/files/openclaw-policy.yml --no-tty --memory 12Gi --provider {{ inference_provider_name }} -- /bin/sh -c "echo sandbox-ready"'
+              Environment=NO_COLOR=1
+              ExecStart=/usr/bin/bash -lc 'set -eu; sandbox_state="$(/usr/local/bin/openshell sandbox list | /usr/bin/awk '\''NR>1 {gsub(/\033\[[0-9;]*m/, ""); if ($1=="{{ sandbox_name }}") {print $NF; exit}}'\'')"; if [ "${sandbox_state}" = "Ready" ]; then exit 0; fi; if [ -n "${sandbox_state}" ]; then /usr/local/bin/openshell sandbox delete {{ sandbox_name }} || true; fi; exec /usr/local/bin/openshell sandbox create --name {{ sandbox_name }} --from {{ trusted_sandbox_image_cfg }} --policy {{ playbook_dir }}/files/openclaw-policy.yml --no-tty --memory 12Gi --provider {{ inference_provider_name }} -- /bin/sh -c "echo sandbox-ready"'
               RemainAfterExit=true
               TimeoutStopSec=60s
 

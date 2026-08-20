@@ -14,4 +14,9 @@ if grep -Fq 'openclaw_proxy_bind_ip.stdout' "$agent_playbook"; then
   exit 1
 fi
 
+grep -Fq 'sandbox_state=' "$agent_playbook"
+grep -Fq 'if [ "${sandbox_state}" = "Ready" ]; then' "$agent_playbook"
+grep -Fq '/usr/local/bin/openshell sandbox delete {{ sandbox_name }}' "$agent_playbook"
+grep -Fq '/usr/local/bin/openshell sandbox create --name {{ sandbox_name }}' "$agent_playbook"
+
 echo "VM one OpenClaw listener split is configured"
