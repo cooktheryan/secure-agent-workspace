@@ -49,6 +49,11 @@ Feature: VM one persistent OpenClaw state
       When agent provisioning prepares the gateway sandbox
       Then the existing sandbox is deleted before sandbox creation
 
+    Scenario: Existing Error OpenClaw sandbox is replaced after reboot
+      Given VM one has a persisted Error OpenClaw sandbox after guest reboot
+      When agent provisioning prepares the gateway sandbox
+      Then the existing sandbox is retried until it can be deleted and recreated
+
   Rule: While VM one exposes OpenClaw through the authenticated userport, the agent playbook shall bind the external proxy to all guest interfaces and reserve the raw OpenClaw forward for localhost.
 
     Scenario: Authenticated userport remains reachable after VM recreation

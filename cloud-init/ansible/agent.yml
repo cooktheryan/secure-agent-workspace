@@ -797,27 +797,63 @@
               export OPENSHELL_GATEWAY=openshell-local
               export NO_COLOR=1
 
-              sandbox_state="$(
-                /usr/local/bin/openshell sandbox list \
-                  | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
-              )"
+              sandbox_state=""
+              sandbox_list_ready=false
+              for attempt in $(/usr/bin/seq 1 30); do
+                if sandbox_state="$(
+                  /usr/local/bin/openshell sandbox list \
+                    | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+                )"; then
+                  sandbox_list_ready=true
+                  break
+                fi
+                /usr/bin/sleep 2
+              done
+
+              if [ "${sandbox_list_ready}" != "true" ]; then
+                echo "OpenShell gateway was not ready after waiting for sandbox list" >&2
+                exit 1
+              fi
 
               if [ "${sandbox_state}" = "Ready" ]; then
                 exit 0
               fi
 
               if [ -n "${sandbox_state}" ]; then
-                /usr/local/bin/openshell sandbox delete {{ sandbox_name }} || true
+                for attempt in $(/usr/bin/seq 1 10); do
+                  if /usr/local/bin/openshell sandbox delete {{ sandbox_name }}; then
+                    break
+                  fi
+                  /usr/bin/sleep 3
+                done
+
+                /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
+                  | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
+                  | /usr/bin/xargs -r /usr/bin/podman rm -f || true
               fi
 
-              exec /usr/local/bin/openshell sandbox create \
-                --name {{ sandbox_name }} \
-                --from {{ trusted_sandbox_image_cfg }} \
-                --policy {{ playbook_dir }}/files/openclaw-policy.yml \
-                --no-tty \
-                --memory 12Gi \
-                --provider {{ inference_provider_name }} \
-                -- /bin/sh -c "echo sandbox-ready"
+              for attempt in $(/usr/bin/seq 1 3); do
+                if [ "${attempt}" -eq 3 ]; then
+                  exec /usr/local/bin/openshell sandbox create \
+                    --name {{ sandbox_name }} \
+                    --from {{ trusted_sandbox_image_cfg }} \
+                    --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                    --no-tty \
+                    --memory 12Gi \
+                    --provider {{ inference_provider_name }} \
+                    -- /bin/sh -c "echo sandbox-ready"
+                fi
+
+                /usr/local/bin/openshell sandbox create \
+                  --name {{ sandbox_name }} \
+                  --from {{ trusted_sandbox_image_cfg }} \
+                  --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                  --no-tty \
+                  --memory 12Gi \
+                  --provider {{ inference_provider_name }} \
+                  -- /bin/sh -c "echo sandbox-ready" && exit 0
+                /usr/bin/sleep 5
+              done
 
         - name: Write openclaw sandbox systemd user unit
           ansible.builtin.copy:
