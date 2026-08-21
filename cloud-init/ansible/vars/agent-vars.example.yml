@@ -19,6 +19,11 @@ openclaw_proxy_redirect_url: "https://saw-agent-userport.${NS}.dal.dev.cirrus.ib
 openclaw_proxy_allowed_users:
   - alice
 
+forge_ui_enabled: true
+forge_ui_port: 18090
+forge_ui_container_port: 8080
+forge_ui_image: "image-registry.openshift-image-registry.svc:5000/${NS}/rh-forge-ui:latest"
+
 inference_provider: glm
 inference_model: rits/zai-org/glm-5-2-fp8
 inference_api_key: ""

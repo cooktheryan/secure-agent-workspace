@@ -27,6 +27,10 @@
     openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
+    forge_ui_enabled_cfg: "{{ forge_ui_enabled | default(false) }}"
+    forge_ui_port_cfg: "{{ forge_ui_port | default(18090) }}"
+    forge_ui_container_port_cfg: "{{ forge_ui_container_port | default(8080) }}"
+    forge_ui_image_cfg: "{{ forge_ui_image | default(\"\") }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
     # Encode the complete patch before it crosses the saw-integ nested shell parsers
     # (host bash -> sandbox /bin/sh). This preserves JSON arrays exactly.
@@ -445,6 +449,87 @@
       become_user: "{{ user_name }}"
       environment: "{{ user_env }}"
       changed_when: true
+
+    - name: Validate Forge UI image when preview is enabled
+      ansible.builtin.assert:
+        that:
+          - forge_ui_image_cfg | length > 0
+        fail_msg: "forge_ui_image must be set when forge_ui_enabled is true"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Ensure user Forge UI runtime dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+      loop:
+        - "{{ user_home }}/.config/systemd/user"
+        - "{{ user_home }}/.local/bin"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Write Forge UI launch script
+      ansible.builtin.copy:
+        dest: "{{ user_home }}/.local/bin/start-forge-ui"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          podman pull "{{ forge_ui_image_cfg }}"
+          podman rm -f forge-ui >/dev/null 2>&1 || true
+
+          exec podman run --rm --name forge-ui \
+            -p 0.0.0.0:{{ forge_ui_port_cfg }}:{{ forge_ui_container_port_cfg }} \
+            "{{ forge_ui_image_cfg }}"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Write Forge UI systemd user unit
+      ansible.builtin.copy:
+        dest: "{{ user_home }}/.config/systemd/user/forge-ui.service"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Forge UI static preview
+          After=podman.socket
+          Wants=podman.socket
+
+          [Service]
+          Type=simple
+          ExecStart=%h/.local/bin/start-forge-ui
+          ExecStop=/usr/bin/podman stop -t 5 forge-ui
+          Restart=on-failure
+          RestartSec=5s
+
+          [Install]
+          WantedBy=default.target
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Enable + start Forge UI preview
+      ansible.builtin.systemd:
+        name: forge-ui.service
+        scope: user
+        enabled: true
+        state: started
+        daemon_reload: true
+      become_user: "{{ user_name }}"
+      environment: "{{ user_env }}"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Wait for Forge UI readiness
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/"
+        status_code: [200]
+      register: forge_ui_health
+      until: forge_ui_health.status == 200
+      retries: 20
+      delay: 3
+      when: forge_ui_enabled_cfg | bool
 
     # === [2/8] Gateway config files (env, toml, systemd unit) ===
     - name: Ensure /etc/openshell exists

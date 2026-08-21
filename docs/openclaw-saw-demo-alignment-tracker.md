@@ -250,6 +250,13 @@ inside OpenShift and remain private in the namespace internal registry.
   - Route: `rh-forge-ui.${NS}.dal.dev.cirrus.ibm.com`
   - Expected first-step limitation: the static UI may report disconnected relay
     or gateway state until the relay integration is added.
+- [x] Add a VM-hosted Forge UI route for namespaces where the operator can
+  create Cirrus Server ports/routes but cannot create normal Deployment and
+  Service resources.
+  - Manifest: `cloud-init/kubernetes/agent-forge-ui-route.yml`
+  - saw-agent port: `forgeui` / `18090`
+  - Route: `saw-agent-forge-ui.${NS}.dal.dev.cirrus.ibm.com`
+  - Ansible unit: `forge-ui.service`
 - [ ] Decide whether Forge UI build orchestration belongs in this SAW branch or
   stays in the demo repo orchestration.
 - [ ] If included here, add build/deploy flow for:

@@ -65,6 +65,9 @@ spec:
     - name: userport
       port: 18789
       protocol: TCP
+    - name: forgeui
+      port: 18090
+      protocol: TCP
     - name: provisionlog
       port: 18080
       protocol: TCP

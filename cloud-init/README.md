@@ -250,7 +250,64 @@ Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through saw-agent and sends model traffic from saw-agent
 to saw-integ over the internal `Service/saw-integ:18083` path.
 
-## Optional Forge UI-only side-by-side preview
+## Optional VM-hosted Forge UI-only side-by-side preview
+
+The preferred path in this Cirrus namespace is to host the static Forge UI
+inside saw-agent, then expose it through a second saw-agent `Server` port and
+Route. This avoids requiring permission to create arbitrary Kubernetes
+Deployments and Services.
+
+The VM-hosted preview does not deploy relay, injector, gateway-token wiring, or
+an additional OpenClaw instance. A disconnected relay/gateway state in the page
+is expected until the relay integration is added later.
+
+The Forge UI image must be pullable by rootless Podman from inside saw-agent.
+The example vars default to the image produced by the upstream OpenShift build:
+
+```text
+image-registry.openshift-image-registry.svc:5000/<namespace>/rh-forge-ui:latest
+```
+
+If that internal image is not pullable from inside the VM, mirror it to a
+registry the VM can read or preload it onto the VM before enabling the service.
+
+Deploy the VM-hosted route after `Server/saw-agent` has been applied:
+
+```bash
+cd cloud-init
+
+export NS='rh-vm-test1'
+
+perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-forge-ui-route.yml | oc apply -f -
+
+oc -n "$NS" get route saw-agent-forge-ui \
+  -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+The VM-hosted Forge UI route host is:
+
+```text
+saw-agent-forge-ui.<namespace>.dal.dev.cirrus.ibm.com
+```
+
+The existing OpenClaw route remains:
+
+```text
+https://saw-agent-userport.<namespace>.dal.dev.cirrus.ibm.com/
+```
+
+Remove only the VM-hosted Forge UI route with:
+
+```bash
+perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-forge-ui-route.yml | oc delete -f -
+```
+
+## Optional Kubernetes Deployment-hosted Forge UI-only preview
+
+This path is useful only when the operator has permission to create normal
+Kubernetes `Deployment`, `Service`, and `ServiceAccount` resources in the
+namespace. In the observed Cirrus namespace, the VM/Server route above is the
+path that matches the available permissions.
 
 The Forge UI can be exposed beside the current OpenClaw route before relay,
 gateway-token, or OpenClaw replacement work is enabled. This preview deploys
