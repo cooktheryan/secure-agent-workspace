@@ -510,25 +510,108 @@
           WantedBy=default.target
       when: forge_ui_enabled_cfg | bool
 
-    - name: Enable + start Forge UI preview
-      ansible.builtin.systemd:
-        name: forge-ui.service
-        scope: user
-        enabled: true
-        state: started
-        daemon_reload: true
-      become_user: "{{ user_name }}"
-      environment: "{{ user_env }}"
-      when: forge_ui_enabled_cfg | bool
+    - name: Start and verify Forge UI preview
+      block:
+        - name: Enable + start Forge UI preview
+          ansible.builtin.systemd:
+            name: forge-ui.service
+            scope: user
+            enabled: true
+            state: started
+            daemon_reload: true
+          become_user: "{{ user_name }}"
+          environment: "{{ user_env }}"
 
-    - name: Wait for Forge UI readiness
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/"
-        status_code: [200]
-      register: forge_ui_health
-      until: forge_ui_health.status == 200
-      retries: 20
-      delay: 3
+        - name: Wait for Forge UI readiness
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/"
+            status_code: [200]
+          register: forge_ui_health
+          until: forge_ui_health.status == 200
+          retries: 20
+          delay: 3
+      rescue:
+        - name: Read Forge UI service status
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - --user
+              - status
+              - forge-ui.service
+              - --no-pager
+              - -l
+          become_user: "{{ user_name }}"
+          environment: "{{ user_env }}"
+          register: forge_ui_service_status
+          changed_when: false
+          failed_when: false
+
+        - name: Read Forge UI service journal
+          ansible.builtin.command:
+            argv:
+              - journalctl
+              - --user
+              - -u
+              - forge-ui.service
+              - -n
+              - "160"
+              - --no-pager
+              - -o
+              - cat
+          become_user: "{{ user_name }}"
+          environment: "{{ user_env }}"
+          register: forge_ui_service_journal
+          changed_when: false
+          failed_when: false
+
+        - name: Inspect Forge UI podman container
+          ansible.builtin.command:
+            argv:
+              - podman
+              - ps
+              - -a
+              - --filter
+              - name=forge-ui
+              - --no-trunc
+          become_user: "{{ user_name }}"
+          environment: "{{ user_env }}"
+          register: forge_ui_podman_ps
+          changed_when: false
+          failed_when: false
+
+        - name: Read Forge UI podman logs
+          ansible.builtin.command:
+            argv:
+              - podman
+              - logs
+              - forge-ui
+              - --tail
+              - "160"
+          become_user: "{{ user_name }}"
+          environment: "{{ user_env }}"
+          register: forge_ui_podman_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Display Forge UI service status
+          ansible.builtin.debug:
+            var: forge_ui_service_status.stdout_lines
+
+        - name: Display Forge UI service journal
+          ansible.builtin.debug:
+            var: forge_ui_service_journal.stdout_lines
+
+        - name: Display Forge UI podman container inspection
+          ansible.builtin.debug:
+            var: forge_ui_podman_ps.stdout_lines
+
+        - name: Display Forge UI podman logs
+          ansible.builtin.debug:
+            var: forge_ui_podman_logs.stdout_lines
+
+        - name: Fail provisioning after Forge UI diagnostics
+          ansible.builtin.fail:
+            msg: "Forge UI preview did not become ready on port {{ forge_ui_port_cfg }}."
       when: forge_ui_enabled_cfg | bool
 
     # === [2/8] Gateway config files (env, toml, systemd unit) ===

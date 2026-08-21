@@ -25,3 +25,11 @@ Feature: Forge UI side-by-side preview
       When saw-agent provisioning starts the Forge UI preview
       Then the static Forge UI listens on a dedicated saw-agent port
       And the Forge UI route targets the saw-agent service instead of a Deployment
+
+  Rule: If the Forge UI preview fails to start or become ready, then saw-agent provisioning shall print Forge UI service and container diagnostics.
+
+    Scenario: Forge UI startup failure is diagnosable
+      Given saw-agent provisioning includes the VM-hosted Forge UI preview
+      When the Forge UI preview is not ready
+      Then the provisioning log includes Forge UI user service diagnostics
+      And the provisioning log includes Forge UI container diagnostics
