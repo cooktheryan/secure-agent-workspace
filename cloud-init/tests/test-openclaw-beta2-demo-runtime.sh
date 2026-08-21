@@ -36,6 +36,10 @@ grep -Fq -- '--env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ infere
 grep -Fq -- '--env OPENCLAW_PROVIDERS=' "$agent_playbook"
 grep -Fq 'export NODE_DISABLE_COMPILE_CACHE=1' "$agent_playbook"
 grep -Fq 'node /tmp/bootstrap-openclaw-beta2-db.mjs' "$agent_playbook"
+if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook"; then
+  echo "beta2 startup must not gate on openclaw --version because this image can exit 137 before gateway launch" >&2
+  exit 1
+fi
 grep -Fq 'if [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
 grep -Fq 'nohup /app/entrypoint.sh' "$agent_playbook"
 grep -Fq 'nohup openclaw gateway run' "$agent_playbook"

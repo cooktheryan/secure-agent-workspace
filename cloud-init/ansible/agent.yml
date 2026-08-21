@@ -1327,9 +1327,7 @@
                   export TMPDIR=/tmp
                   mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
 
-                  if openclaw --version | grep -Fq "2026.8.1-beta.2"; then
-                    node /tmp/bootstrap-openclaw-beta2-db.mjs
-                  fi
+                  node /tmp/bootstrap-openclaw-beta2-db.mjs
 
                   if [ -x /app/entrypoint.sh ]; then
                     nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
