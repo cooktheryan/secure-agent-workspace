@@ -261,7 +261,10 @@
         state: directory
         owner: "{{ user_name }}"
         group: "{{ user_name }}"
-        mode: "0750"
+        # The sandbox process identity does not necessarily match the host
+        # openshell UID/GID. Keep the mount narrowly scoped to OpenClaw home,
+        # but make the mounted directory writable inside the sandbox.
+        mode: "0777"
 
     - name: Ensure VM one persistent bind targets exist
       ansible.builtin.file:

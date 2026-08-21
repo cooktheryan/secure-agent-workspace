@@ -12,6 +12,7 @@ grep -Fq 'OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:{{ openclaw_forward_port_cfg }
 grep -Fq 'openclaw_home_host_path: /var/lib/saw-one-state/openclaw-home' "$agent_playbook"
 grep -Fq 'enable_bind_mounts = true' "$agent_playbook"
 grep -Fq 'Ensure persistent OpenClaw home exists' "$agent_playbook"
+grep -Fq 'mode: "0777"' "$agent_playbook"
 grep -Fq -- '--driver-config-json "${driver_config_json}" \' "$agent_playbook"
 grep -Fq '"source":"{{ openclaw_home_host_path }}"' "$agent_playbook"
 grep -Fq '"target":"/sandbox/.openclaw"' "$agent_playbook"
