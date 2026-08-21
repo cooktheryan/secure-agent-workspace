@@ -5,7 +5,7 @@ metadata:
   namespace: ${NS}
   labels:
     app.kubernetes.io/name: secure-agent-workspace
-    app.kubernetes.io/component: two-vm-agent
+    app.kubernetes.io/component: saw-agent
 spec:
   host: saw-agent-userport.${NS}.dal.dev.cirrus.ibm.com
   port:

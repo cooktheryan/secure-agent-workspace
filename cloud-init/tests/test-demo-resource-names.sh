@@ -18,17 +18,20 @@ done
 
 grep -Fq 'name: saw-agent' "$agent_manifest"
 grep -Fq 'hostname: saw-agent' "$agent_manifest"
+grep -Fq 'app.kubernetes.io/component: saw-agent' "$agent_manifest"
 grep -Fq 'secretName: saw-agent-vars' "$agent_manifest"
 grep -Fq 'claimName: saw-agent-state-persist' "$agent_manifest"
 grep -Fq 'claimName: saw-agent-assets-persist' "$agent_manifest"
 grep -Fq 'kind: Route' "$agent_route_manifest"
 grep -Fq 'name: saw-agent-userport' "$agent_route_manifest"
+grep -Fq 'app.kubernetes.io/component: saw-agent' "$agent_route_manifest"
 grep -Fq 'host: saw-agent-userport.${NS}.dal.dev.cirrus.ibm.com' "$agent_route_manifest"
 grep -Fq 'name: saw-agent' "$agent_route_manifest"
 grep -Fq 'targetPort: userport' "$agent_route_manifest"
 
 grep -Fq 'name: saw-integ' "$integrations_manifest"
 grep -Fq 'hostname: saw-integ' "$integrations_manifest"
+grep -Fq 'app.kubernetes.io/component: saw-integ' "$integrations_manifest"
 grep -Fq 'secretName: saw-integ-vars' "$integrations_manifest"
 grep -Fq 'claimName: saw-integ-persist' "$integrations_manifest"
 
@@ -41,6 +44,12 @@ grep -Fq 'saw-integ' "$readme"
 
 if grep -R 'feat/two-persist-pvc' "$agent_manifest" "$integrations_manifest"; then
   echo "cloud-init still bootstraps from the known-good PVC branch instead of the new demo branch" >&2
+  exit 1
+fi
+
+if grep -R -E 'one-userport|two\\.rh-vm|one\\.rh-vm|dot-userport|two-vm-|one-vm-' \
+  "$agent_manifest" "$integrations_manifest" "$agent_route_manifest" "$agent_vars" "$integrations_vars"; then
+  echo "demo assets still contain stale one/two/dot resource names" >&2
   exit 1
 fi
 

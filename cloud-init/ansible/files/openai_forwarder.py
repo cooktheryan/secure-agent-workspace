@@ -20,6 +20,7 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
     "host",
     "authorization",
+    "content-length",
 }
 
 
@@ -43,6 +44,34 @@ UPSTREAM_BASE = env("OPENAI_UPSTREAM_BASE_URL", "https://api.openai.com/v1").rst
 PORT = int(env("INTEGRATION_PROXY_PORT", "18083"))
 TLS_CERT = env("INTEGRATION_PROXY_TLS_CERT", "/etc/saw-integration/tls/server.crt")
 TLS_KEY = env("INTEGRATION_PROXY_TLS_KEY", "/etc/saw-integration/tls/server.key")
+
+
+def model_requires_max_completion_tokens(model):
+    model_name = str(model or "")
+    return model_name.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
+def rewrite_chat_completions_body(path, body, content_type):
+    if body is None:
+        return None
+    if path != "/v1/chat/completions":
+        return body
+    if "application/json" not in (content_type or "").lower():
+        return body
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return body
+    if not isinstance(payload, dict):
+        return body
+    if not model_requires_max_completion_tokens(payload.get("model")):
+        return body
+    if "max_tokens" not in payload:
+        return body
+    if "max_completion_tokens" not in payload:
+        payload["max_completion_tokens"] = payload["max_tokens"]
+    del payload["max_tokens"]
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -127,7 +156,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_json(503, {"status": "provider-not-ready"})
             return
 
-        body = self.read_body()
+        body = rewrite_chat_completions_body(
+            self.path,
+            self.read_body(),
+            self.headers.get("content-type", ""),
+        )
         headers = {
             key: value
             for key, value in self.headers.items()

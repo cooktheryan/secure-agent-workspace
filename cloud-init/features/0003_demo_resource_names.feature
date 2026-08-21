@@ -23,3 +23,10 @@ Feature: OpenClaw SAW demo resource names
       Given the committed route manifest is rendered for a namespace
       When the OpenClaw SAW demo browser endpoint is exposed
       Then the route targets the saw-agent userport Service
+
+  Rule: While the OpenClaw SAW demo uses a GPT-5-compatible OpenAI chat model, the integration proxy shall translate chat completion token limits to the upstream-supported field.
+
+    Scenario: GPT-5 chat completions use max_completion_tokens
+      Given the integration proxy receives an OpenAI chat completion request for GPT-5
+      When OpenClaw sends a max_tokens limit
+      Then the upstream request uses max_completion_tokens instead

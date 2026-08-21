@@ -5,7 +5,7 @@ metadata:
   namespace: ${NS}
   labels:
     app.kubernetes.io/name: secure-agent-workspace
-    app.kubernetes.io/component: two-vm-integration
+    app.kubernetes.io/component: saw-integ
 spec:
   cloudInit:
     userData: |
