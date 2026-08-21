@@ -31,6 +31,13 @@
     forge_ui_port_cfg: "{{ forge_ui_port | default(18090) }}"
     forge_ui_container_port_cfg: "{{ forge_ui_container_port | default(8080) }}"
     forge_ui_image_cfg: "{{ forge_ui_image | default(\"\") }}"
+    forge_ui_registry_server_cfg: "{{ forge_ui_registry_server | default(\"\") }}"
+    forge_ui_registry_username_cfg: "{{ forge_ui_registry_username | default(\"\") }}"
+    forge_ui_registry_password_cfg: "{{ forge_ui_registry_password | default(\"\") }}"
+    forge_ui_registry_auth_enabled_cfg: >-
+      {{ (forge_ui_registry_server_cfg | length > 0)
+         or (forge_ui_registry_username_cfg | length > 0)
+         or (forge_ui_registry_password_cfg | length > 0) }}
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
     # Encode the complete patch before it crosses the saw-integ nested shell parsers
     # (host bash -> sandbox /bin/sh). This preserves JSON arrays exactly.
@@ -456,6 +463,38 @@
           - forge_ui_image_cfg | length > 0
         fail_msg: "forge_ui_image must be set when forge_ui_enabled is true"
       when: forge_ui_enabled_cfg | bool
+
+    - name: Validate Forge UI registry auth when provided
+      ansible.builtin.assert:
+        that:
+          - forge_ui_registry_server_cfg | length > 0
+          - forge_ui_registry_username_cfg | length > 0
+          - forge_ui_registry_password_cfg | length > 0
+        fail_msg: >-
+          forge_ui_registry_server, forge_ui_registry_username, and
+          forge_ui_registry_password must all be set when any Forge UI registry
+          auth value is provided.
+      when:
+        - forge_ui_enabled_cfg | bool
+        - forge_ui_registry_auth_enabled_cfg | bool
+
+    - name: Authenticate rootless Podman for Forge UI image registry
+      ansible.builtin.command:
+        argv:
+          - podman
+          - login
+          - "{{ forge_ui_registry_server_cfg }}"
+          - --username
+          - "{{ forge_ui_registry_username_cfg }}"
+          - --password-stdin
+        stdin: "{{ forge_ui_registry_password_cfg }}"
+      become_user: "{{ user_name }}"
+      environment: "{{ user_env }}"
+      changed_when: true
+      no_log: true
+      when:
+        - forge_ui_enabled_cfg | bool
+        - forge_ui_registry_auth_enabled_cfg | bool
 
     - name: Ensure user Forge UI runtime dirs exist
       ansible.builtin.file:
