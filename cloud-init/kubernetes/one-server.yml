@@ -36,7 +36,7 @@ spec:
           install -d -m 0755 "${checkout}"
           # Gist-based bootstrap is deprecated; use this versioned repository branch.
           curl -fsSL --retry 5 --retry-delay 10 \
-            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/cloud-init-two-vm.tar.gz \
+            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/two-persist-pvc.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
           usermod --add-subuids 100000-165535 --add-subgids 100000-165535 openshell 2>/dev/null || true
           systemd-run --unit=saw-provision.service --setenv=HOME=/root /usr/bin/bash -c 'exec /usr/bin/ansible-playbook -i localhost, /opt/secure-agent-workspace/cloud-init/ansible/site.yml -e @/etc/openshell-saw/vars.yml > /var/log/saw-provision.log 2>&1'
@@ -54,3 +54,15 @@ spec:
       volume:
         secret:
           secretName: one-vars
+    - name: persistent-state
+      serial: ONESTATE
+      volume:
+        persistentVolumeClaim:
+          claimName: one-state-persist
+          readOnly: false
+    - name: persistent-assets
+      serial: ONEASSETS
+      volume:
+        persistentVolumeClaim:
+          claimName: one-assets-persist
+          readOnly: false

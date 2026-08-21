@@ -19,7 +19,7 @@
 
     - name: Install shared packages
       ansible.builtin.dnf:
-        name: "{{ ['ca-certificates', 'curl', 'jq', 'python3', 'python3-pip', 'qemu-guest-agent'] if saw_vm_role_required == 'agent' else ['ca-certificates', 'python3', 'qemu-guest-agent'] }}"
+        name: "{{ ['ca-certificates', 'curl', 'jq', 'python3', 'qemu-guest-agent'] if saw_vm_role_required == 'agent' else ['ca-certificates', 'python3', 'qemu-guest-agent', 'xfsprogs'] }}"
         state: present
       register: shared_pkg_install
       retries: 5
@@ -65,6 +65,92 @@
     - name: Configure integration inference proxy on VM two
       when: saw_vm_role_required == 'integration'
       block:
+        - name: Locate persistent integration disk
+          ansible.builtin.shell: |
+            set -euo pipefail
+            lsblk -rpno NAME,SERIAL | awk '$2=="TWOPERSIST"{print $1;exit}'
+          args:
+            executable: /bin/bash
+          register: saw_persist_device
+          changed_when: false
+          retries: 12
+          delay: 5
+          until: saw_persist_device.stdout | length > 0
+
+        - name: Check persistent integration disk filesystem
+          ansible.builtin.command: "blkid {{ saw_persist_device.stdout }}"
+          register: saw_persist_blkid
+          changed_when: false
+          failed_when: false
+
+        - name: Format blank persistent integration disk
+          ansible.builtin.command: "mkfs.xfs -f {{ saw_persist_device.stdout }}"
+          when: saw_persist_blkid.rc != 0
+          changed_when: true
+
+        - name: Read persistent integration disk UUID
+          ansible.builtin.command: "blkid -s UUID -o value {{ saw_persist_device.stdout }}"
+          register: saw_persist_uuid
+          changed_when: false
+
+        - name: Ensure persistent integration mount point exists
+          ansible.builtin.file:
+            path: /var/lib/saw-persist
+            state: directory
+            mode: "0750"
+
+        - name: Persist integration disk mount
+          ansible.builtin.lineinfile:
+            path: /etc/fstab
+            regexp: '^[^#]\S+\s+/var/lib/saw-persist\s+'
+            line: "UUID={{ saw_persist_uuid.stdout }} /var/lib/saw-persist xfs defaults,nofail 0 2"
+            create: true
+            mode: "0644"
+
+        - name: Mount persistent integration disk
+          ansible.builtin.command: mount /var/lib/saw-persist
+          register: saw_persist_mount
+          changed_when: saw_persist_mount.rc == 0
+          failed_when: saw_persist_mount.rc != 0 and 'already mounted' not in saw_persist_mount.stderr
+
+        - name: Ensure persistent integration bind sources exist
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0750"
+          loop:
+            - /var/lib/saw-persist/etc-saw-integration
+            - /var/lib/saw-persist/var-lib-saw-integration
+
+        - name: Ensure integration bind targets exist
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: "0750"
+          loop:
+            - /etc/saw-integration
+            - /var/lib/saw-integration
+
+        - name: Persist integration bind mounts
+          ansible.builtin.lineinfile:
+            path: /etc/fstab
+            regexp: "^[^#]\\S+\\s+{{ item.target | regex_escape() }}\\s+"
+            line: "{{ item.source }} {{ item.target }} none bind,nofail 0 0"
+            create: true
+            mode: "0644"
+          loop:
+            - { source: /var/lib/saw-persist/etc-saw-integration, target: /etc/saw-integration }
+            - { source: /var/lib/saw-persist/var-lib-saw-integration, target: /var/lib/saw-integration }
+
+        - name: Mount integration bind targets
+          ansible.builtin.command: "mount {{ item }}"
+          register: saw_persist_bind_mount
+          changed_when: saw_persist_bind_mount.rc == 0
+          failed_when: saw_persist_bind_mount.rc != 0 and 'already mounted' not in saw_persist_bind_mount.stderr
+          loop:
+            - /etc/saw-integration
+            - /var/lib/saw-integration
+
         - name: Ensure integration directories exist
           ansible.builtin.file:
             path: "{{ item.path }}"
@@ -101,7 +187,13 @@
             content: "{{ integration_proxy_tls_key_pem }}"
           no_log: true
 
-        - name: Initialize canonical OpenAI credential file
+        - name: Inspect canonical OpenAI credential file
+          ansible.builtin.stat:
+            path: /etc/saw-integration/openai.key
+          register: integration_openai_key_file
+          no_log: true
+
+        - name: Initialize canonical OpenAI credential file when absent or empty
           ansible.builtin.copy:
             dest: /etc/saw-integration/openai.key
             mode: "0600"
@@ -109,6 +201,7 @@
             group: root
             content: "{{ integration_proxy_openai_key_cfg }}"
             force: true
+          when: (not integration_openai_key_file.stat.exists) or ((integration_openai_key_file.stat.size | default(0) | int) == 0)
           no_log: true
 
         - name: Write integration proxy environment
