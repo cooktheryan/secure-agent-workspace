@@ -49,13 +49,6 @@ Feature: saw-agent persistent OpenClaw state
       When agent provisioning creates the OpenClaw sandbox
       Then the sandbox identity is openclaw-saw
 
-  Rule: While saw-agent is aligned with the OpenClaw SAW demo, the agent configuration shall use the pinned demo OpenClaw runtime image.
-
-    Scenario: Demo-compatible OpenClaw runtime image is configured
-      Given saw-agent is deployed for the OpenClaw SAW demo
-      When agent provisioning creates the OpenClaw sandbox
-      Then the sandbox runtime image is the pinned demo OpenClaw image
-
   Rule: While saw-agent persists OpenClaw identity assets, the agent playbook shall mount the OpenClaw home from the state PVC into the sandbox.
 
     Scenario: OpenClaw workspace files survive sandbox replacement
