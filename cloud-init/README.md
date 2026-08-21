@@ -205,12 +205,7 @@ when the VM is recreated.
 ```bash
 oc -n "$NS" wait --for=jsonpath='{.metadata.name}'=saw-agent service/saw-agent --timeout=10m
 
-oc -n "$NS" create route edge saw-agent-userport \
-  --service=saw-agent \
-  --port=userport \
-  --hostname="$ROUTE_HOST" \
-  --insecure-policy=Redirect \
-  --dry-run=client -o yaml | oc apply -f -
+NS="$NS" perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-userport-route.yml | oc apply -f -
 
 oc -n "$NS" get route saw-agent-userport
 ```

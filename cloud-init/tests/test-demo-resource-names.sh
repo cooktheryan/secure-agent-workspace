@@ -4,11 +4,12 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 agent_manifest="$repo_root/cloud-init/kubernetes/agent-server.yml"
 integrations_manifest="$repo_root/cloud-init/kubernetes/integrations-server.yml"
+agent_route_manifest="$repo_root/cloud-init/kubernetes/agent-userport-route.yml"
 agent_vars="$repo_root/cloud-init/ansible/vars/agent-vars.example.yml"
 integrations_vars="$repo_root/cloud-init/ansible/vars/integrations-vars.example.yml"
 readme="$repo_root/cloud-init/README.md"
 
-for path in "$agent_manifest" "$integrations_manifest" "$agent_vars" "$integrations_vars"; do
+for path in "$agent_manifest" "$integrations_manifest" "$agent_route_manifest" "$agent_vars" "$integrations_vars"; do
   test -f "$path" || {
     echo "missing expected demo asset: ${path#$repo_root/}" >&2
     exit 1
@@ -20,6 +21,11 @@ grep -Fq 'hostname: saw-agent' "$agent_manifest"
 grep -Fq 'secretName: saw-agent-vars' "$agent_manifest"
 grep -Fq 'claimName: saw-agent-state-persist' "$agent_manifest"
 grep -Fq 'claimName: saw-agent-assets-persist' "$agent_manifest"
+grep -Fq 'kind: Route' "$agent_route_manifest"
+grep -Fq 'name: saw-agent-userport' "$agent_route_manifest"
+grep -Fq 'host: saw-agent-userport.${NS}.dal.dev.cirrus.ibm.com' "$agent_route_manifest"
+grep -Fq 'name: saw-agent' "$agent_route_manifest"
+grep -Fq 'targetPort: userport' "$agent_route_manifest"
 
 grep -Fq 'name: saw-integ' "$integrations_manifest"
 grep -Fq 'hostname: saw-integ' "$integrations_manifest"

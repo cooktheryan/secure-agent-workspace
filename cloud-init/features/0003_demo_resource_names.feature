@@ -16,3 +16,10 @@ Feature: OpenClaw SAW demo resource names
       Given the committed agent variables are rendered for a namespace
       When agent provisioning configures model traffic
       Then the endpoint references saw-integ through cluster Service DNS
+
+  Rule: While the OpenClaw SAW demo is deployed, Cirrus cloud-init shall publish the agent browser endpoint through the saw-agent-userport OpenShift Route.
+
+    Scenario: Browser route targets the agent userport Service
+      Given the committed route manifest is rendered for a namespace
+      When the OpenClaw SAW demo browser endpoint is exposed
+      Then the route targets the saw-agent userport Service
