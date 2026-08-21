@@ -9,6 +9,13 @@ grep -Fq -- '--port {{ openclaw_forward_port_cfg }} \' "$agent_playbook"
 grep -Fq 'ExecStart=/usr/local/bin/openshell forward start 127.0.0.1:{{ openclaw_forward_port_cfg }} {{ sandbox_name }}' "$agent_playbook"
 grep -Fq 'OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:{{ openclaw_proxy_port_cfg }}' "$agent_playbook"
 grep -Fq 'OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:{{ openclaw_forward_port_cfg }}' "$agent_playbook"
+grep -Fq 'openclaw_home_host_path: /var/lib/saw-one-state/openclaw-home' "$agent_playbook"
+grep -Fq 'enable_bind_mounts = true' "$agent_playbook"
+grep -Fq 'Ensure persistent OpenClaw home exists' "$agent_playbook"
+grep -Fq -- '--driver-config-json "${driver_config_json}" \' "$agent_playbook"
+grep -Fq '"source":"{{ openclaw_home_host_path }}"' "$agent_playbook"
+grep -Fq '"target":"/sandbox/.openclaw"' "$agent_playbook"
+grep -Fq '"selinux_label":"shared"' "$agent_playbook"
 
 if grep -Fq 'openclaw_proxy_bind_ip.stdout' "$agent_playbook"; then
   echo "agent playbook still depends on a discovered VM IP for OpenClaw proxy binding" >&2

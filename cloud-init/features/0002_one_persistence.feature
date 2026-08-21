@@ -42,6 +42,13 @@ Feature: VM one persistent OpenClaw state
       When agent provisioning runs again
       Then the existing sandbox is reused instead of deleted
 
+  Rule: While VM one persists OpenClaw identity assets, the agent playbook shall mount the OpenClaw home from the state PVC into the sandbox.
+
+    Scenario: OpenClaw workspace files survive sandbox replacement
+      Given VM one has a state PVC for OpenClaw home files
+      When the OpenClaw sandbox is created
+      Then the sandbox receives a writable host bind mount at the OpenClaw home path
+
   Rule: If VM one has a persisted non-Ready OpenClaw sandbox, then the agent playbook shall replace it before creating the gateway sandbox.
 
     Scenario: Existing Error OpenClaw sandbox is replaced

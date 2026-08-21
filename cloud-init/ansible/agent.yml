@@ -23,6 +23,7 @@
     openclaw_proxy_enabled_cfg: true
     openclaw_proxy_port_cfg: "{{ userport | mandatory }}"
     openclaw_forward_port_cfg: 18788
+    openclaw_home_host_path: /var/lib/saw-one-state/openclaw-home
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
@@ -254,6 +255,14 @@
         mode: "0750"
       loop: "{{ one_persistent_bind_mounts }}"
 
+    - name: Ensure persistent OpenClaw home exists
+      ansible.builtin.file:
+        path: "{{ openclaw_home_host_path }}"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0750"
+
     - name: Ensure VM one persistent bind targets exist
       ansible.builtin.file:
         path: "{{ item.target }}"
@@ -385,8 +394,9 @@
           [openshell.gateway.auth]
           allow_unauthenticated_users = false
 
-          {% if inference_https_proxy_cfg | length > 0 %}
           [openshell.drivers.podman]
+          enable_bind_mounts = true
+          {% if inference_https_proxy_cfg | length > 0 %}
           https_proxy = "{{ inference_https_proxy_cfg }}"
           {% endif %}
 
@@ -614,8 +624,9 @@
           [openshell.gateway.auth]
           allow_unauthenticated_users = false
 
-          {% if inference_https_proxy_cfg | length > 0 %}
           [openshell.drivers.podman]
+          enable_bind_mounts = true
+          {% if inference_https_proxy_cfg | length > 0 %}
           https_proxy = "{{ inference_https_proxy_cfg }}"
           {% endif %}
 
@@ -796,6 +807,7 @@
 
               export OPENSHELL_GATEWAY=openshell-local
               export NO_COLOR=1
+              driver_config_json='{"podman":{"mounts":[{"type":"bind","source":"{{ openclaw_home_host_path }}","target":"/sandbox/.openclaw","read_only":false,"selinux_label":"shared"}]}}'
 
               sandbox_state=""
               sandbox_list_ready=false
@@ -838,6 +850,7 @@
                     --name {{ sandbox_name }} \
                     --from {{ trusted_sandbox_image_cfg }} \
                     --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                    --driver-config-json "${driver_config_json}" \
                     --no-tty \
                     --memory 12Gi \
                     --provider {{ inference_provider_name }} \
@@ -848,6 +861,7 @@
                   --name {{ sandbox_name }} \
                   --from {{ trusted_sandbox_image_cfg }} \
                   --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                  --driver-config-json "${driver_config_json}" \
                   --no-tty \
                   --memory 12Gi \
                   --provider {{ inference_provider_name }} \

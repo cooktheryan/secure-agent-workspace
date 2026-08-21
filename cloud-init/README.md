@@ -297,6 +297,10 @@ During VM one agent provisioning:
 - the asset disk is mounted at `/var/lib/saw-one-assets`;
 - `/etc/openshell` and OpenShell user config/state directories are
   bind-mounted from the state disk;
+- `/var/lib/saw-one-state/openclaw-home` is bind-mounted into the OpenClaw
+  sandbox at `/sandbox/.openclaw` through OpenShell's Podman driver config, so
+  `SOUL.md`, `IDENTITY.md`, avatars, sessions, and related OpenClaw files
+  survive sandbox replacement;
 - rootless Podman container storage is bind-mounted from the asset disk.
 
 User systemd unit files are intentionally not persisted. They are reproducible
@@ -305,10 +309,11 @@ on each fresh VM root disk. Persisting them can make stale enabled units start
 too early during boot and fail before provisioning reinstalls `/usr/local/bin`.
 
 The OpenClaw sandbox unit intentionally reuses an existing Ready sandbox instead
-of deleting it on every provisioning run. That matters because OpenClaw's
-`/sandbox` data lives inside the sandbox container writable layer. Persisting
-rootless Podman storage keeps that layer available across VM recreation, but an
-explicit `openshell sandbox delete <name>` can still remove the sandbox data.
+of deleting it on every provisioning run. If OpenShell reports a persisted
+sandbox as non-Ready after reboot, provisioning can replace the sandbox runtime
+without losing OpenClaw identity assets because OpenClaw's home directory is a
+state-PVC-backed bind mount rather than disposable container writable-layer
+state.
 
 ### VM two persistence
 
