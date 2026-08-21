@@ -137,9 +137,9 @@
         set -euo pipefail
         dnf -q makecache --refresh
         for pkg in \
-          telnet git ansible-core podman fuse-overlayfs slirp4netns \
-          curl jq lsof qemu-guest-agent openssh-clients openssh-server \
-          binutils nodejs xfsprogs
+          ansible-core podman fuse-overlayfs slirp4netns \
+          curl jq qemu-guest-agent openssh-clients openssh-server \
+          binutils xfsprogs
         do
           dnf -q list "${pkg}" >/dev/null
         done
@@ -154,20 +154,16 @@
     - name: Ensure required packages are installed
       ansible.builtin.dnf:
         name:
-          - telnet
-          - git
           - ansible-core
           - podman
           - fuse-overlayfs
           - slirp4netns
           - curl
           - jq
-          - lsof
           - qemu-guest-agent
           - openssh-clients
           - openssh-server
           - binutils
-          - nodejs
           - xfsprogs
         enablerepo:
           - rhel-9-for-x86_64-baseos-rpms
@@ -178,6 +174,21 @@
       retries: 10
       delay: 20
       until: pkg_install is succeeded
+
+    - name: Install optional troubleshooting packages when available
+      ansible.builtin.dnf:
+        name:
+          - telnet
+          - git
+          - lsof
+          - nodejs
+        enablerepo:
+          - rhel-9-for-x86_64-baseos-rpms
+          - rhel-9-for-x86_64-appstream-rpms
+        skip_broken: true
+        state: present
+      register: optional_pkg_install
+      failed_when: false
 
     - name: Resolve target user account
       ansible.builtin.getent:

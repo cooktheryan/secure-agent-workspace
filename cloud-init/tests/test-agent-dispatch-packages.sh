@@ -40,6 +40,18 @@ if refresh > availability:
 if availability > install:
     print("RHEL package availability check must run before package install", file=sys.stderr)
     sys.exit(1)
+required_window = text[availability:install]
+for optional in ("telnet", "git", "lsof", "nodejs"):
+    if optional in required_window:
+        print(f"optional package {optional} must not gate required package availability", file=sys.stderr)
+        sys.exit(1)
+optional_install = text.find("- name: Install optional troubleshooting packages when available")
+if optional_install == -1:
+    print("agent playbook must install optional troubleshooting packages separately", file=sys.stderr)
+    sys.exit(1)
+if optional_install < install:
+    print("optional troubleshooting packages must not install before required packages", file=sys.stderr)
+    sys.exit(1)
 PY
 then
   exit 1
