@@ -1313,6 +1313,7 @@
                 --env OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw \
                 --env OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace \
                 --env OPENCLAW_NO_RESPAWN=1 \
+                --env NODE_DISABLE_COMPILE_CACHE=1 \
                 --env OPENCLAW_WIDGET_PORT=18790 \
                 --env OPENCLAW_PUBLIC_URL={{ openclaw_route_origin_cfg }} \
                 --env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }} \
@@ -1321,6 +1322,7 @@
                   set -eu
                   export HOME=/sandbox
                   export OPENCLAW_HOME=/sandbox
+                  export NODE_DISABLE_COMPILE_CACHE=1
                   export SQLITE_TMPDIR=/tmp
                   export TMPDIR=/tmp
                   mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
@@ -1344,7 +1346,7 @@
                     nohup openclaw gateway run \
                       --allow-unconfigured \
                       --bind lan \
-                      --port 18789 \
+                      --port {{ openclaw_forward_port_cfg }} \
                       >/tmp/openclaw-gateway.log 2>&1 </dev/null &
                   fi
                 ' </dev/null

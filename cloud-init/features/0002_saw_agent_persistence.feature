@@ -56,7 +56,7 @@ Feature: saw-agent persistent OpenClaw state
       When the OpenClaw sandbox is created
       Then the sandbox receives writable durable OpenClaw state
 
-  Rule: While saw-agent deploys the OpenClaw 2026.8.1 beta2 demo runtime, the agent playbook shall use the demo CSB entrypoint and beta2 database bootstrap.
+  Rule: While saw-agent deploys the OpenClaw 2026.8.1 beta2 runtime, the agent playbook shall use the beta2 database bootstrap and a compile-cache-safe gateway launch.
 
     Scenario: OpenClaw beta2 starts with the demo runtime contract
       Given saw-agent is deployed for the OpenClaw SAW demo
@@ -64,6 +64,8 @@ Feature: saw-agent persistent OpenClaw state
       Then the sandbox runs with the demo image user
       And OpenClaw state is mounted at the demo persist path
       And the beta2 database bootstrap is available before the gateway starts
+      And the gateway launch disables the Node compile cache
+      And the gateway launch binds to the raw forward port
 
   Rule: If saw-agent has a persisted non-Ready OpenClaw sandbox, then the agent playbook shall replace it before creating the gateway sandbox.
 
