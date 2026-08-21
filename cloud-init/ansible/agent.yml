@@ -26,6 +26,9 @@
     openclaw_forward_port_cfg: 18788
     openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
+    sandbox_registry_server_cfg: "{{ sandbox_registry_server | default('quay.io') }}"
+    sandbox_registry_username_cfg: "{{ sandbox_registry_username | default('') }}"
+    sandbox_registry_password_cfg: "{{ sandbox_registry_password | default('') }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
     # Encode the complete patch before it crosses the saw-integ nested shell parsers
@@ -433,6 +436,28 @@
         path: "/run/user/{{ user_uid }}/podman/podman.sock"
         timeout: 15
       ignore_errors: true
+
+    - name: Log in to sandbox image registry
+      ansible.builtin.shell: |
+        set -euo pipefail
+        printf '%s' "$SANDBOX_REGISTRY_PASSWORD" |
+          podman login "$SANDBOX_REGISTRY_SERVER" \
+            --username "$SANDBOX_REGISTRY_USERNAME" \
+            --password-stdin
+      args:
+        executable: /bin/bash
+      become_user: "{{ user_name }}"
+      environment: "{{ user_env | combine({
+        'SANDBOX_REGISTRY_SERVER': sandbox_registry_server_cfg,
+        'SANDBOX_REGISTRY_USERNAME': sandbox_registry_username_cfg,
+        'SANDBOX_REGISTRY_PASSWORD': sandbox_registry_password_cfg
+      }) }}"
+      changed_when: true
+      no_log: true
+      when:
+        - sandbox_registry_server_cfg | length > 0
+        - sandbox_registry_username_cfg | length > 0
+        - sandbox_registry_password_cfg | length > 0
 
     - name: Build sandbox image with integration CA trust
       ansible.builtin.command:

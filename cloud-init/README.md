@@ -46,6 +46,7 @@ directory such as `cloud-init/.secrets/`.
 | Secret value | Required where | Purpose | Commit to Git? |
 | --- | --- | --- | --- |
 | OpenAI-compatible provider API key | `Secret/saw-integ-vars` only, as `integration_proxy_openai_key` | Allows saw-integ to call the upstream OpenAI-compatible provider. The default demo target is GLM at `https://ete-litellm.ai-models.vpc.res.ibm.com/v1`. | No |
+| Sandbox image registry username/password or robot token | `Secret/saw-agent-vars` only, as `sandbox_registry_username` and `sandbox_registry_password` | Allows saw-agent's rootless Podman store to pull private/pinned sandbox images such as the OpenClaw runtime from Quay before creating the trusted wrapper image. | Never |
 | Internal bearer, 64 hex chars | Both `Secret/saw-agent-vars` as `inference_api_key` and `Secret/saw-integ-vars` as `integration_proxy_expected_bearer` | Allows saw-agent to call only saw-integ's integration proxy | No |
 | Integration CA certificate | Both `Secret/saw-agent-vars` and `Secret/saw-integ-vars` as `integration_proxy_ca_pem` | Lets saw-agent trust saw-integ's HTTPS integration proxy | No, unless it is intentionally public test CA material |
 | Integration TLS certificate | `Secret/saw-integ-vars` as `integration_proxy_tls_cert_pem` | Server certificate for saw-integ's HTTPS integration proxy | No, unless it is intentionally public test cert material |
@@ -134,6 +135,9 @@ Edit `.secrets/saw-agent-vars.yml`:
 - set `openclaw_proxy_allowed_users` to the users allowed through the browser
   proxy;
 - set `inference_api_key` to the generated internal bearer;
+- set `sandbox_registry_username` and `sandbox_registry_password` only when the
+  sandbox runtime image requires registry authentication, for example a Quay
+  robot account that can pull `quay.io/rh-forge/openclaw-saw`;
 - set `integration_proxy_ca_pem` to the generated integration CA certificate;
 - set `keycloak_ca_pem` only if the Keycloak issuer uses a private CA.
 

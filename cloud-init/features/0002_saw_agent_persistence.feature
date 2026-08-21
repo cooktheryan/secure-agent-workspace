@@ -56,6 +56,13 @@ Feature: saw-agent persistent OpenClaw state
       When agent provisioning creates the OpenClaw sandbox
       Then the sandbox runtime image is the pinned demo OpenClaw image
 
+  Rule: Where the pinned OpenClaw runtime image requires registry authentication, the agent playbook shall authenticate rootless Podman before pulling the sandbox image.
+
+    Scenario: Private runtime image pull uses the saw-agent registry secret
+      Given saw-agent has sandbox registry credentials in its mounted vars
+      When agent provisioning prepares the trusted sandbox image
+      Then rootless Podman is authenticated to the sandbox image registry
+
   Rule: While saw-agent persists OpenClaw identity assets, the agent playbook shall mount the OpenClaw home from the state PVC into the sandbox.
 
     Scenario: OpenClaw workspace files survive sandbox replacement
