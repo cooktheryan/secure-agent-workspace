@@ -105,6 +105,24 @@
   tasks:
     # Self-heal a flaky cloud-init dnf: reinstall (idempotent) with retries so a
     # single transient mirror/network hiccup doesn't break the whole run.
+    - name: Refresh and enable RHEL package repositories before package install
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if command -v subscription-manager >/dev/null 2>&1; then
+          subscription-manager refresh || true
+          subscription-manager repos \
+            --enable=rhel-9-for-x86_64-baseos-rpms \
+            --enable=rhel-9-for-x86_64-appstream-rpms || true
+        fi
+        dnf clean all
+      args:
+        executable: /bin/bash
+      register: dnf_repo_bootstrap
+      changed_when: false
+      retries: 5
+      delay: 15
+      until: dnf_repo_bootstrap.rc == 0
+
     - name: Refresh DNF metadata before package install
       ansible.builtin.command:
         cmd: dnf makecache --refresh
@@ -132,6 +150,10 @@
           - binutils
           - nodejs
           - xfsprogs
+        enablerepo:
+          - rhel-9-for-x86_64-baseos-rpms
+          - rhel-9-for-x86_64-appstream-rpms
+        update_cache: true
         state: present
       register: pkg_install
       retries: 5

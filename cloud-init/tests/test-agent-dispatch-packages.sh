@@ -15,13 +15,20 @@ import sys
 from pathlib import Path
 
 text = Path(sys.argv[1]).read_text()
+repo_bootstrap = text.find("- name: Refresh and enable RHEL package repositories before package install")
 refresh = text.find("- name: Refresh DNF metadata before package install")
 install = text.find("- name: Ensure required packages are installed")
+if repo_bootstrap == -1:
+    print("agent playbook must refresh and enable RHEL repositories before package install", file=sys.stderr)
+    sys.exit(1)
 if refresh == -1:
     print("agent playbook must refresh DNF metadata before package install", file=sys.stderr)
     sys.exit(1)
 if install == -1:
     print("agent playbook package install task was not found", file=sys.stderr)
+    sys.exit(1)
+if repo_bootstrap > refresh:
+    print("RHEL repository bootstrap must run before DNF metadata refresh", file=sys.stderr)
     sys.exit(1)
 if refresh > install:
     print("DNF metadata refresh must run before package install", file=sys.stderr)
