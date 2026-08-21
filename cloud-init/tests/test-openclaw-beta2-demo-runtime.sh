@@ -34,6 +34,8 @@ grep -Fq -- '--env OPENCLAW_NO_RESPAWN=1' "$agent_playbook"
 grep -Fq -- '--env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }}' "$agent_playbook"
 grep -Fq -- '--env OPENCLAW_PROVIDERS=' "$agent_playbook"
 grep -Fq 'node /tmp/bootstrap-openclaw-beta2-db.mjs' "$agent_playbook"
+grep -Fq 'if [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
 grep -Fq 'nohup /app/entrypoint.sh' "$agent_playbook"
+grep -Fq 'nohup openclaw gateway run' "$agent_playbook"
 
 echo "OpenClaw beta2 demo runtime contract is baked into saw-agent provisioning"

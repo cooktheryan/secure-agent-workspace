@@ -1329,7 +1329,24 @@
                     node /tmp/bootstrap-openclaw-beta2-db.mjs
                   fi
 
-                  nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                  if [ -x /app/entrypoint.sh ]; then
+                    nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                  else
+                    mkdir -p "${OPENCLAW_STATE_DIR}" "${OPENCLAW_WORKSPACE_DIR}"
+                    openclaw config set gateway.mode local
+                    openclaw config set gateway.bind lan
+                    openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
+                    openclaw config set gateway.controlUi.allowedOrigins "[\"{{ openclaw_route_origin_cfg }}\",\"http://localhost:18789\",\"http://127.0.0.1:18789\"]" --strict-json
+                    openclaw config set models.providers "{{ openclaw_providers_json }}" --strict-json
+                    openclaw config set agents.defaults.model.primary "{{ inference_provider_cfg }}/{{ inference_model_cfg }}"
+                    openclaw config set agents.defaults.models "{\"{{ inference_provider_cfg }}/{{ inference_model_cfg }}\":{}}" --strict-json --replace
+                    openclaw config validate --json
+                    nohup openclaw gateway run \
+                      --allow-unconfigured \
+                      --bind lan \
+                      --port 18789 \
+                      >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                  fi
                 ' </dev/null
                 {% else %}
                 --env CUSTOM_API_KEY=proxy-managed \
