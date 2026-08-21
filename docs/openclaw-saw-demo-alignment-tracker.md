@@ -256,17 +256,17 @@ inside OpenShift and remain private in the namespace internal registry.
   - Manifest: `cloud-init/kubernetes/agent-forge-ui-route.yml`
   - saw-agent port: `forgeui` / `18090`
   - Route: `saw-agent-forge-ui.${NS}.dal.dev.cirrus.ibm.com`
-  - Ansible unit: `forge-ui.service`
+  - Ansible units: `forge-ui.service`, `forge-relay.service`
 - [ ] Decide whether Forge UI build orchestration belongs in this SAW branch or
   stays in the demo repo orchestration.
-- [ ] If included here, add build/deploy flow for:
+- [x] If included here, add deploy flow for externally built VM-hosted images:
   - `rh-forge-ui`
   - `rh-forge-ui-relay`
-- [ ] Store the OpenClaw gateway token in the relay Secret without printing it.
-- [ ] Add route validation for the Forge UI.
+- [x] Store the OpenClaw gateway token for the VM-hosted relay without printing it.
+- [x] Add route validation for the Forge UI relay API.
 - [ ] Document that the PoC demo header injector is not a production
   authentication boundary.
-- [ ] Ensure relay state and outbox state are PVC-backed and contain no real
+- [x] Ensure relay state and outbox state are PVC-backed and contain no real
   provider credentials.
 
 ## Suggested implementation order

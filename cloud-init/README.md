@@ -250,27 +250,34 @@ Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through saw-agent and sends model traffic from saw-agent
 to saw-integ over the internal `Service/saw-integ:18083` path.
 
-## Optional VM-hosted Forge UI-only side-by-side preview
+## Optional VM-hosted Forge UI side-by-side preview
 
-The preferred path in this Cirrus namespace is to host the static Forge UI
-inside saw-agent, then expose it through a second saw-agent `Server` port and
-Route. This avoids requiring permission to create arbitrary Kubernetes
-Deployments and Services.
+The preferred path in this Cirrus namespace is to host Forge UI inside
+`saw-agent`, then expose it through a second saw-agent `Server` port and Route.
+This avoids requiring permission to create arbitrary Kubernetes Deployments and
+Services.
 
-The VM-hosted preview does not deploy relay, injector, gateway-token wiring, or
-an additional OpenClaw instance. A disconnected relay/gateway state in the page
-is expected until the relay integration is added later.
+When `forge_relay_enabled` is true, the VM-hosted preview also runs
+`forge-relay.service` on loopback and starts the Forge UI nginx container as a
+same-origin front door. `/api/*` and `/api/chat/ws` are proxied to the relay,
+and the relay connects southbound to the existing OpenClaw raw localhost
+forward. It does not deploy a Kubernetes Deployment, injector pod, or
+additional OpenClaw instance.
 
-The Forge UI image must be pullable by rootless Podman from inside saw-agent.
-The example vars default to the AMD64 image published for the VM-hosted preview:
+The Forge UI and Forge relay images must be pullable by rootless Podman from
+inside saw-agent. The example vars default to the AMD64 images published for the
+VM-hosted preview:
 
 ```text
 quay.io/rcook/rh-forge-ui:demo1-amd64
+quay.io/rcook/rh-forge-ui-relay:demo1-amd64
 ```
 
-If that image is private, configure rootless Podman auth for the `openshell`
+If either image is private, configure rootless Podman auth for the `openshell`
 user before enabling the service, or temporarily make the repository public
-while validating the preview.
+while validating the preview. The relay gateway token and relay device identity
+are generated on the VM and stored under `/home/openshell/.config/forge-ui`;
+they are not stored in the repository.
 
 Deploy the VM-hosted route after `Server/saw-agent` has been applied:
 
@@ -284,6 +291,17 @@ perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-forge-ui-route.yml | oc apply 
 oc -n "$NS" get route saw-agent-forge-ui \
   -o jsonpath='https://{.spec.host}{"\n"}'
 ```
+
+Verify that the route is connected to the relay rather than serving only the
+static SPA fallback:
+
+```bash
+curl -skL "https://saw-agent-forge-ui.${NS}.dal.dev.cirrus.ibm.com/api/config" | jq .
+curl -skL "https://saw-agent-forge-ui.${NS}.dal.dev.cirrus.ibm.com/api/status" | jq .
+```
+
+`/api/config` should return `target: "relay"`. `/api/status` should report the
+relay's OpenClaw gateway state.
 
 The VM-hosted Forge UI route host is:
 

@@ -23,6 +23,10 @@ forge_ui_enabled: true
 forge_ui_port: 18090
 forge_ui_container_port: 8080
 forge_ui_image: "quay.io/rcook/rh-forge-ui:demo1-amd64"
+forge_relay_enabled: true
+forge_relay_port: 18091
+forge_relay_image: "quay.io/rcook/rh-forge-ui-relay:demo1-amd64"
+forge_relay_user: alice
 
 inference_provider: glm
 inference_model: rits/zai-org/glm-5-2-fp8
