@@ -90,6 +90,15 @@ Feature: saw-agent persistent OpenClaw state
       When an OpenClaw user service fails to start
       Then provisioning reports the sandbox list and recent user service journal
 
+
+  Rule: While OpenClaw runtime config is generated, the agent playbook shall persist the live-good OpenAI completions provider and trusted-proxy settings.
+
+    Scenario: Runtime config matches the live validated gateway setup
+      Given saw-agent is deployed for the OpenClaw SAW demo
+      When agent provisioning writes OpenClaw runtime configuration
+      Then OpenClaw uses the OpenAI completions provider through the sandbox inference route
+      And OpenClaw trusts the authenticated route proxy for Alice
+
   Rule: While OpenClaw user services are being started, the agent playbook shall verify actual service activity before failing provisioning.
 
     Scenario: Active OpenClaw services are accepted after noisy start output

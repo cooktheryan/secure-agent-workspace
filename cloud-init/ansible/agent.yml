@@ -61,38 +61,32 @@
           }
         } | to_json | b64encode
       }}
-    # Preserve the proven OpenAI Responses metadata for the approved model.
+    # Preserve the live-good OpenAI-compatible completions metadata for the
+    # approved model. The gateway reaches the integration VM through
+    # OpenShell's in-sandbox inference route; using the Responses shape here
+    # caused OpenClaw to reject UI requests as schema/tool payload failures.
     openclaw_known_openai_model_catalog:
       gpt-5.6-sol:
-        id: gpt-5.6-sol
-        name: GPT-5.6 Sol
-        api: openai-responses
-        reasoning: true
+        id: "{{ inference_model_cfg }}"
+        name: "{{ inference_model_cfg }} (Custom Provider)"
+        api: openai-completions
+        reasoning: false
         input: [text, image]
-        contextWindow: 1050000
-        contextTokens: 272000
-        maxTokens: 128000
+        contextWindow: 128000
+        maxTokens: 4096
         cost:
-          input: 5
-          output: 30
-          cacheRead: 0.5
-          cacheWrite: 6.25
-        thinkingLevelMap:
-          'off': none
-          xhigh: xhigh
-          max: max
-        compat:
-          supportsReasoningEffort: true
-          supportedReasoningEfforts: [none, low, medium, high, xhigh, max]
-          supportsTemperature: false
-          codeMode: preferred
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
     openclaw_known_model_patch_b64: >-
       {{
         {
           'models': {
             'providers': {
               'openai': {
-                'api': 'openai-responses',
+                'baseUrl': 'https://inference.local/v1',
+                'api': 'openai-completions',
                 'models': [
                   openclaw_known_openai_model_catalog.get(inference_model_cfg, {})
                 ]
