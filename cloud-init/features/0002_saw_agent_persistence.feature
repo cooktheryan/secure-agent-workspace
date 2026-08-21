@@ -42,6 +42,13 @@ Feature: saw-agent persistent OpenClaw state
       When agent provisioning runs again
       Then the existing sandbox is reused instead of deleted
 
+  Rule: While saw-agent is aligned with the OpenClaw SAW demo, the agent configuration shall use openclaw-saw as the OpenClaw sandbox name.
+
+    Scenario: Demo-compatible OpenClaw sandbox identity is configured
+      Given saw-agent is deployed for the OpenClaw SAW demo
+      When agent provisioning creates the OpenClaw sandbox
+      Then the sandbox identity is openclaw-saw
+
   Rule: While saw-agent persists OpenClaw identity assets, the agent playbook shall mount the OpenClaw home from the state PVC into the sandbox.
 
     Scenario: OpenClaw workspace files survive sandbox replacement

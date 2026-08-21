@@ -77,7 +77,7 @@ change the complete reference set together.
 | saw-agent disk serials | `SAWAGENTSTATE`, `SAWAGENTASSETS` | `kubernetes/agent-server.yml`, `ansible/agent.yml` | Change both the Cirrus mount serial and the Ansible disk discovery serial in the same commit. |
 | saw-integ disk serial | `SAWINTEGPERSIST` | `kubernetes/integrations-server.yml`, `ansible/site.yml` | Change both the Cirrus mount serial and the Ansible disk discovery serial in the same commit. |
 | Secret names | `saw-agent-vars`, `saw-integ-vars` | Server mounts in `kubernetes/*-server.yml` | Rename the Secret resources and update the `secretName` values on the matching Server manifests. |
-| OpenClaw sandbox name | `sawone` | `ansible/vars/agent-vars.example.yml`, persisted OpenShell/Podman state | Changing this creates a different sandbox identity. Preserve data by migrating the old sandbox state or intentionally starting fresh. |
+| OpenClaw sandbox name | `openclaw-saw` | `ansible/vars/agent-vars.example.yml`, persisted OpenShell/Podman state | Changing this creates a different sandbox identity. Preserve data by migrating the old sandbox state or intentionally starting fresh. |
 
 The integration VM name is the most sensitive reference. Kubernetes Service DNS
 solves changing VM IPs, but the DNS name itself is part of the integration
@@ -250,7 +250,7 @@ to saw-integ over the internal `Service/saw-integ:18083` path.
 
 ## Experimental VM persistence
 
-The `feat/openclaw-saw-demo-clean` branch prototypes persistence for saw-agent and saw-integ.
+The `feat/openclaw-demo-alignment` branch prototypes persistence for saw-agent and saw-integ.
 It expects existing block PVCs in the same namespace as the `Server` resources:
 
 | VM | PVC | Purpose |

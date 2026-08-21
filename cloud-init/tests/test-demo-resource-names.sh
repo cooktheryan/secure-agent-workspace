@@ -43,6 +43,10 @@ grep -Fq 'serial: SAWINTEGPERSIST' "$integrations_manifest"
 grep -Fq 'claimName: saw-integ-persist' "$integrations_manifest"
 
 grep -Fq 'hostname: saw-agent' "$agent_vars"
+if ! grep -Fq 'sandbox_name: openclaw-saw' "$agent_vars"; then
+  echo "saw-agent vars must use the OpenClaw SAW demo sandbox name openclaw-saw" >&2
+  exit 1
+fi
 grep -Fq 'hostname: saw-integ' "$integrations_vars"
 grep -Fq 'https://saw-integ.${NS}.svc.cluster.local:18083/v1' "$agent_vars"
 
@@ -62,6 +66,14 @@ if grep -R -E \
   'one-userport|one-state-persist|one-assets-persist|two-persist|one-vars|two-vars|two-vm|one-vm|VM one|VM two|Server one|Server two|Service/one|Service/two|vmi/one|vmi/two|svc/one|svc/two|ONESTATE|ONEASSETS|TWOPERSIST|one_|two_|_one|_two' \
   "$repo_root/cloud-init"; then
   echo "demo assets still contain stale one/two resource names" >&2
+  exit 1
+fi
+
+if grep -R -E \
+  --exclude='test-demo-resource-names.sh' \
+  'sandbox_name: sawone|sandbox=sawone|\\bsawone\\b' \
+  "$repo_root/cloud-init"; then
+  echo "demo assets still contain the pre-demo OpenClaw sandbox name" >&2
   exit 1
 fi
 
