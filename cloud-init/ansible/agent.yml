@@ -16,7 +16,7 @@
     inference_https_proxy_cfg: "{{ inference_https_proxy | default('') }}"
     provider_sel: "{{ provider_map[inference_provider_cfg] | mandatory }}"
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
-    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:two-vm"
+    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-agent"
     gw_name: openshell
     mtls_gw: openshell-local
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"

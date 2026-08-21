@@ -8,6 +8,8 @@ agent_route_manifest="$repo_root/cloud-init/kubernetes/agent-userport-route.yml"
 agent_vars="$repo_root/cloud-init/ansible/vars/agent-vars.example.yml"
 integrations_vars="$repo_root/cloud-init/ansible/vars/integrations-vars.example.yml"
 readme="$repo_root/cloud-init/README.md"
+agent_playbook="$repo_root/cloud-init/ansible/agent.yml"
+features_dir="$repo_root/cloud-init/features"
 
 for path in "$agent_manifest" "$integrations_manifest" "$agent_route_manifest" "$agent_vars" "$integrations_vars"; do
   test -f "$path" || {
@@ -47,8 +49,9 @@ if grep -R 'feat/two-persist-pvc' "$agent_manifest" "$integrations_manifest"; th
   exit 1
 fi
 
-if grep -R -E 'one-userport|two\\.rh-vm|one\\.rh-vm|dot-userport|two-vm-|one-vm-' \
-  "$agent_manifest" "$integrations_manifest" "$agent_route_manifest" "$agent_vars" "$integrations_vars"; then
+if grep -R -E 'one-userport|two\\.rh-vm|one\\.rh-vm|dot-userport|two-vm|one-vm|VM two|Server two|two-persist' \
+  "$agent_manifest" "$integrations_manifest" "$agent_route_manifest" \
+  "$agent_vars" "$integrations_vars" "$agent_playbook" "$features_dir"; then
   echo "demo assets still contain stale one/two/dot resource names" >&2
   exit 1
 fi
