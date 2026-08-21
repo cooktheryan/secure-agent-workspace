@@ -8,11 +8,56 @@ when a step is verified, check it off or remove it, then commit the update.
 
 - Upstream reference checkout: `/Users/rcook/git/openclaw-saw-demo`
 - Refreshed from `origin/main`: 2026-08-21
-- Upstream commit inspected: `562bd25` (`forwarder files`)
+- Original upstream commit inspected: `562bd25` (`forwarder files`)
+- Latest upstream workstream inspected: PR #6, local branch
+  `pr-6-openclaw-saw-demo`, head `ea29d0d`
+  (`fix(demo): support clean-room updates from macOS`)
 - Source files reviewed:
   - `README.md`
   - `docs/components-and-images.md`
   - `docs/credentials.md`
+  - `docs/inference.md`
+  - `docs/restart-recovery.md`
+  - `docs/troubleshooting.md`
+  - `demo.env.example`
+
+## PR #6 deltas to account for
+
+PR #6 changes the target from the older two-VM README into a stricter
+`demo-1` clean-room reproduction flow:
+
+- Demo images are selected with `:demo1` tags, imported into the OpenShift
+  internal registry, and resolved to immutable digests before use.
+- The normal path imports seven credential-free runtime/proxy images from
+  `quay.io/redhat-et/*:demo1`; only Forge UI and Forge relay are built
+  in-cluster.
+- OpenShell gateway, supervisor, and CLI are pinned to `0.0.110` and verified
+  on both VMs after setup.
+- OpenAI-compatible inference moves behind Gateway B / the integrations VM on
+  port `18086`; the agent receives only an opaque inter-VM capability.
+- The integrations VM now has seven explicit service ports:
+  - `18080` Gmail read
+  - `18081` Gmail write
+  - `18082` M365 read
+  - `18083` M365 write
+  - `18084` Slack read
+  - `18085` Slack user write
+  - `18086` OpenAI-compatible inference
+- Gmail tooling inside OpenClaw uses agent loopback `127.0.0.1:18079`.
+- OpenClaw receives read capabilities, inference, and Forge ingest only. It
+  must not receive provider write tokens, writer binaries, write providers, or
+  routes to write-service ports.
+- The OpenClaw image includes the Chief of Staff workspace and daily-briefing
+  skill for backend ID `default`.
+- Restart recovery is now a first-class requirement using user-level recovery
+  targets/services and post-restart verification.
+- Provider credential scripts changed:
+  - `configure-inference-proxy.sh` replaces the older OpenAI-only setup flow.
+  - `authorize-and-configure-gmail-read.sh` combines Gmail read authorization
+    and provider install.
+  - `authorize-gmail-compose.sh` supports compose-only Gmail write bootstrap.
+  - `credential-readiness.sh` reports provider readiness without printing
+    credential values.
 
 ## Already aligned and verified in this branch
 
@@ -40,6 +85,33 @@ when a step is verified, check it off or remove it, then commit the update.
   proxy/trusted-proxy setup.
 - [x] Validate the live OpenClaw UI after the name-change and GLM migration.
 
+## Current local divergences from PR #6
+
+These are not failures by themselves; they are places where our known-good
+environment intentionally differs from the latest upstream demo workstream.
+
+- [ ] Reconcile VM naming. This branch uses `saw-agent` / `saw-integ`; PR #6's
+  `demo.env.example` defaults to `demo1-agent` / `demo1-integ`.
+- [ ] Reconcile route/auth. This branch uses the authenticated
+  `saw-agent-userport` route; PR #6's Forge UI path uses a demo header injector
+  and explicitly says it is not a production auth boundary.
+- [ ] Reconcile inference. This branch uses `saw-integ:18083` for the current
+  OpenAI-compatible integration proxy; PR #6 reserves `18083` for M365 write
+  and moves inference to `18086`.
+- [ ] Reconcile model/provider. This branch uses GLM
+  `rits/zai-org/glm-5-2-fp8`; PR #6 defaults to `gpt-5.6-sol` through its
+  inference proxy flow. Keep GLM unless the user explicitly chooses to move
+  back.
+- [ ] Reconcile OpenShell version. This branch remains on `0.0.103`; PR #6
+  pins and verifies `0.0.110`.
+- [ ] Reconcile image flow. This branch currently uses a direct
+  `sandbox_image` plus trusted wrapper build on the VM; PR #6 imports
+  published `quay.io/redhat-et/*:demo1` images into the internal registry first.
+- [ ] Reconcile OpenClaw runtime image. We tested
+  `quay.io/rh-forge/openclaw-saw:2026.8.1-beta.2-20260821160256` and reverted
+  it because `openclaw --version` exited `137` even under direct rootless
+  Podman. Do not reintroduce that image without a new image/runtime fix.
+
 ## Demo requirements still left to implement
 
 ### Six credential-isolating integration proxies
@@ -48,34 +120,47 @@ The upstream demo expects these to live on `saw-integ`, with real service
 credentials staying on the integration VM side of the boundary.
 
 - [ ] Gmail read proxy
-  - image: `${IMAGE_REPOSITORY}/gmail-read-proxy:latest`
-  - source: `rh-forge/rust-gmail-proxy/read-proxy`
+  - PR #6 image selector: internal `gmail-read-proxy:demo1`, imported from
+    `quay.io/redhat-et/gmail-read-proxy:demo1`
+  - source lock: `rh-forge/rust-gmail-proxy` `demo1`
+  - integration VM port: `18080`
+  - agent loopback: `127.0.0.1:18079`
   - credential material: read-only Gmail OAuth grant
   - validation: proxy ready, OpenClaw can read through the governed path
 - [ ] Gmail write proxy
-  - image: `${IMAGE_REPOSITORY}/gmail-write-proxy:latest`
-  - source: `rh-forge/rust-gmail-proxy/write-proxy`
+  - PR #6 image selector: internal `gmail-write-proxy:demo1`, imported from
+    `quay.io/redhat-et/gmail-write-proxy:demo1`
+  - source lock: `rh-forge/rust-gmail-proxy` `demo1`
+  - integration VM port: `18081`
   - credential material: compose-only Gmail OAuth grant
   - validation: write path can create draft/proposal without granting broad mail
     access to OpenClaw
 - [ ] Microsoft 365 read proxy
-  - image: `${IMAGE_REPOSITORY}/m365-read-proxy:latest`
+  - PR #6 image selector: internal `m365-read-proxy:demo1`, imported from
+    `quay.io/redhat-et/m365-read-proxy:demo1`
   - source: `rh-forge/rust-m365-proxy/read-proxy`
+  - integration VM port: `18082`
   - credential material: delegated read OAuth grant
   - validation: read proxy ready and scoped Graph read request works
 - [ ] Microsoft 365 write proxy
-  - image: `${IMAGE_REPOSITORY}/m365-write-proxy:latest`
+  - PR #6 image selector: internal `m365-write-proxy:demo1`, imported from
+    `quay.io/redhat-et/m365-write-proxy:demo1`
   - source: `rh-forge/rust-m365-proxy/write-proxy`
+  - integration VM port: `18083`
   - credential material: delegated write OAuth grant
   - validation: draft/send proposal flow works through the write boundary
 - [ ] Slack read proxy
-  - image: `${IMAGE_REPOSITORY}/slack-read-proxy:latest`
-  - source: `rh-forge/rust-slack-proxy`
+  - PR #6 image selector: internal `slack-read-proxy:demo1`, imported from
+    `quay.io/redhat-et/slack-read-proxy:demo1`
+  - source lock: documented `IsaiahStapleton/rust-slack-proxy` `demo1` fork
+  - integration VM port: `18084`
   - credential material: read-scoped Slack user token
   - validation: read proxy ready and scoped Slack read request works
 - [ ] Slack write proxy
-  - image: `${IMAGE_REPOSITORY}/slack-write-proxy:latest`
-  - source: `rh-forge/rust-slack-proxy`
+  - PR #6 image selector: internal `slack-write-proxy:demo1`, imported from
+    `quay.io/redhat-et/slack-write-proxy:demo1`
+  - source lock: documented `IsaiahStapleton/rust-slack-proxy` `demo1` fork
+  - integration VM port: `18085`
   - credential material: write-scoped Slack user token
   - validation: approval/front-door write path works without attaching write
     authority directly to OpenClaw
@@ -83,42 +168,67 @@ credentials staying on the integration VM side of the boundary.
 ### OpenClaw runtime and image alignment
 
 - [ ] Pin the OpenClaw runtime/image to demo version `2026.8.1-beta.2`.
-  - Current status: intentionally deferred. Earlier image/version work made the
-    deployment unstable, so do this only as a separate tested checkpoint.
+  - PR #6 normal path imports `quay.io/redhat-et/openclaw-saw:demo1` into the
+    internal registry and deploys the internal `openclaw-saw:demo1` image by
+    resolved digest.
+  - Current status: intentionally deferred. The tested
+    `quay.io/rh-forge/openclaw-saw:2026.8.1-beta.2-20260821160256` image was
+    not live-compatible in this VM runtime shape; `openclaw --version` exited
+    `137` even under direct rootless Podman.
   - Validation gate: deploy fresh `saw-agent`, confirm `/ready`, login as
     `alice`, and complete one successful LLM request before committing.
-- [ ] Confirm whether all seven runtime images are already published under the
-  expected repository before adding build steps:
-  - OpenClaw headless CSB
-  - Gmail read proxy
-  - Gmail write proxy
-  - M365 read proxy
-  - M365 write proxy
-  - Slack read proxy
-  - Slack write proxy
-- [ ] Avoid adding VM-time image builds unless a required published image is
-  unavailable. The upstream demo assumes published runtime images; building
-  during cloud-init made earlier tests slower and more fragile.
+- [ ] Implement the PR #6 image import/internal-registry flow instead of
+  VM-time image builds:
+  - `scripts/import-demo-runtime-images.sh`
+  - `scripts/build-rh-forge-ui-images.sh`
+  - `scripts/configure-internal-registry.sh`
+  - internal ImageStreamTags for all nine demo images
+- [ ] Keep the normal path Quay-login-free: PR #6 says published `demo1` images
+  do not require copying a Quay pull identity into the namespace.
 
 ### OpenClaw/provider registration work
 
 - [ ] Add provider definitions for each read proxy in the agent-side OpenClaw
   configuration.
-- [ ] Add only the intended write front-door capability for write flows; do not
-  attach broad write credentials directly to the agent sandbox.
+- [ ] Add inference as a Gateway B capability on port `18086`; remove the
+  current inference-on-`18083` shape before introducing M365 write.
+- [ ] Add Forge ingest as an agent capability.
+- [ ] Explicitly deny write capabilities in the OpenClaw sandbox:
+  - no Gmail-write provider;
+  - no M365-write provider;
+  - no Slack-write provider;
+  - no writer binaries;
+  - no routes to integration write ports `18081`, `18083`, or `18085`.
 - [ ] Add per-proxy health/readiness checks to provisioning.
 - [ ] Add failure diagnostics that print proxy status/log tails without printing
   secrets.
 - [ ] Add tests that reject stale legacy names (`one`, `two`, `sawone`) in
   active manifests, vars, and rendered config.
+- [ ] Add tests for the PR #6 locked capability boundary: OpenClaw has read,
+  inference, and Forge-ingest only.
+
+### Restart recovery
+
+PR #6 adds restart recovery as a first-class part of the demo.
+
+- [ ] Install recovery scripts and user units on both VMs.
+- [ ] Add app/forward recovery configuration for all application sandboxes and
+  forwards.
+- [ ] Enable recovery targets but do not start them over existing foreground
+  processes.
+- [ ] Add post-restart verification equivalent to
+  `scripts/verify-restart-recovery.sh`.
+- [ ] Confirm restart verification checks service status only and does not
+  print provider data, message bodies, or approval snapshots.
 
 ### Daily briefing / Chief of Staff package
 
-The upstream README includes temporary PoC scaffolding for installing the daily
-briefing identity, instructions, schema, and skill from `rh-forge/forge-agent-catalog`.
+PR #6 moves the target toward a versioned Chief of Staff workspace and
+daily-briefing skill installed into OpenClaw backend ID `default`.
 
-- [ ] Decide whether this branch should install the daily briefing package.
-- [ ] If yes, add a non-secret user profile contract:
+- [ ] Add or consume the Chief of Staff workspace from the locked
+  `forge-agent-catalog` `demo1` revision.
+- [ ] Add a non-secret user profile contract:
   - display name
   - role
   - initials
@@ -126,41 +236,51 @@ briefing identity, instructions, schema, and skill from `rh-forge/forge-agent-ca
   - time zone
 - [ ] Persist the installed package under the OpenClaw persistent workspace.
 - [ ] Track the installed `forge-agent-catalog` commit for reproducibility.
-- [ ] Replace the temporary installer once OpenClaw exposes the supported Claw
-  package installation command.
+- [ ] Ensure Home starts empty and offers "Run daily briefing" rather than
+  generating fixture drafts or silently starting provider workflows.
 
 ### Forge UI and relay
 
-The upstream demo includes Forge UI and relay as a later access path. Those
-images are built inside OpenShift, not pulled from Quay.
+PR #6 treats Forge UI and relay as part of the full demo. They are built
+inside OpenShift and remain private in the namespace internal registry.
 
 - [ ] Decide whether Forge UI/relay belongs in this SAW branch or stays in the
-  demo repo.
-- [ ] If included, add build/deploy flow for:
+  demo repo orchestration.
+- [ ] If included here, add build/deploy flow for:
   - `rh-forge-ui`
   - `rh-forge-ui-relay`
 - [ ] Store the OpenClaw gateway token in the relay Secret without printing it.
 - [ ] Add route validation for the Forge UI.
 - [ ] Document that the PoC demo header injector is not a production
   authentication boundary.
+- [ ] Ensure relay state and outbox state are PVC-backed and contain no real
+  provider credentials.
 
 ## Suggested implementation order
 
 1. Keep the current GLM/name-change baseline as the rollback point.
-2. Add one read-only proxy first, preferably Gmail read.
-3. Deploy fresh VMs and validate:
+2. Reconcile the PR #6 port map before adding any proxy:
+   - move inference from `18083` to `18086`;
+   - reserve `18083` for M365 write.
+3. Add the internal-registry image import/auth flow without changing the live
+   OpenClaw runtime image.
+4. Add one read-only proxy first, preferably Gmail read.
+5. Deploy or hot-apply the smallest safe unit and validate:
    - integration proxy ready endpoint
    - agent ready endpoint
    - OpenClaw UI login as `alice`
    - one LLM request
    - one proxy-backed tool request
-4. Commit the healthy checkpoint.
-5. Add the paired write proxy for the same provider and repeat the full
+6. Commit the healthy checkpoint.
+7. Add the paired write proxy for the same provider and repeat the full
    validation gate.
-6. Repeat for M365 read/write, then Slack read/write.
-7. Only after the proxy topology is stable, revisit the OpenClaw
-   `2026.8.1-beta.2` image/version pin.
-8. Decide on daily briefing and Forge UI as separate checkpoints.
+8. Repeat for M365 read/write, then Slack read/write.
+9. Add restart recovery and verify it with an authorized reboot only after the
+   non-reboot checks are stable.
+10. Revisit OpenClaw `2026.8.1-beta.2` only through the PR #6 internal-image
+    flow or a fixed image that passes `openclaw --version` under direct Podman.
+11. Decide on daily briefing and Forge UI as separate checkpoints if they stay
+    in this repository.
 
 ## Validation gate for every checked item
 
