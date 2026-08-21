@@ -1329,7 +1329,9 @@
 
                   node /tmp/bootstrap-openclaw-beta2-db.mjs
 
-                  if [ -x /app/entrypoint.sh ]; then
+                  if [ -x /usr/local/bin/entrypoint.sh ]; then
+                    nohup /usr/local/bin/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                  elif [ -x /app/entrypoint.sh ]; then
                     nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
                   else
                     mkdir -p "${OPENCLAW_STATE_DIR}" "${OPENCLAW_WORKSPACE_DIR}"

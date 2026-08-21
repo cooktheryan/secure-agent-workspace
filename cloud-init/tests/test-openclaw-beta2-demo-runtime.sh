@@ -9,8 +9,8 @@ bootstrap="$repo_root/cloud-init/ansible/files/bootstrap-openclaw-beta2-db.mjs"
 
 grep -Fq 'sandbox_image: quay.io/rh-forge/openclaw-saw:2026.8.1-beta.2-20260821160256' "$agent_vars"
 grep -Fq 'openclaw_demo_csb_enabled: true' "$agent_vars"
-grep -Fq 'openclaw_sandbox_uid: "1000"' "$agent_vars"
-grep -Fq 'openclaw_sandbox_gid: "1000"' "$agent_vars"
+grep -Fq 'openclaw_sandbox_uid: "1001"' "$agent_vars"
+grep -Fq 'openclaw_sandbox_gid: "1001"' "$agent_vars"
 
 test -f "$bootstrap"
 grep -Fq 'DatabaseSync' "$bootstrap"
@@ -40,7 +40,9 @@ if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook";
   echo "beta2 startup must not gate on openclaw --version because this image can exit 137 before gateway launch" >&2
   exit 1
 fi
-grep -Fq 'if [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
+grep -Fq 'if [ -x /usr/local/bin/entrypoint.sh ]; then' "$agent_playbook"
+grep -Fq 'nohup /usr/local/bin/entrypoint.sh' "$agent_playbook"
+grep -Fq 'elif [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
 grep -Fq 'nohup /app/entrypoint.sh' "$agent_playbook"
 grep -Fq 'nohup openclaw gateway run' "$agent_playbook"
 grep -Fq -- '--port {{ openclaw_forward_port_cfg }}' "$agent_playbook"
