@@ -6,7 +6,7 @@ namespace: "${NS}"
 hostname: saw-integ
 
 integration_proxy_port: 18083
-integration_proxy_upstream_url: https://api.openai.com/v1
+integration_proxy_upstream_url: https://ete-litellm.ai-models.vpc.res.ibm.com/v1
 integration_proxy_expected_bearer: ""
 integration_proxy_openai_key: ""
 integration_proxy_ca_pem: ""

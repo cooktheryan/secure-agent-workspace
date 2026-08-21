@@ -45,7 +45,7 @@ directory such as `cloud-init/.secrets/`.
 
 | Secret value | Required where | Purpose | Commit to Git? |
 | --- | --- | --- | --- |
-| OpenAI/provider API key | `Secret/saw-integ-vars` only, as `integration_proxy_openai_key` | Allows saw-integ to call the upstream OpenAI-compatible provider | No |
+| OpenAI-compatible provider API key | `Secret/saw-integ-vars` only, as `integration_proxy_openai_key` | Allows saw-integ to call the upstream OpenAI-compatible provider. The default demo target is GLM at `https://ete-litellm.ai-models.vpc.res.ibm.com/v1`. | No |
 | Internal bearer, 64 hex chars | Both `Secret/saw-agent-vars` as `inference_api_key` and `Secret/saw-integ-vars` as `integration_proxy_expected_bearer` | Allows saw-agent to call only saw-integ's integration proxy | No |
 | Integration CA certificate | Both `Secret/saw-agent-vars` and `Secret/saw-integ-vars` as `integration_proxy_ca_pem` | Lets saw-agent trust saw-integ's HTTPS integration proxy | No, unless it is intentionally public test CA material |
 | Integration TLS certificate | `Secret/saw-integ-vars` as `integration_proxy_tls_cert_pem` | Server certificate for saw-integ's HTTPS integration proxy | No, unless it is intentionally public test cert material |
@@ -141,7 +141,9 @@ Edit `.secrets/saw-integ-vars.yml`:
 - replace every `${NS}` with the target namespace;
 - set `integration_proxy_expected_bearer` to the same internal bearer used in
   `.secrets/saw-agent-vars.yml`;
-- set `integration_proxy_openai_key` to the provider API key;
+- set `integration_proxy_openai_key` to the provider API key. The default
+  OpenAI-compatible provider is `rits/zai-org/glm-5-2-fp8` through
+  `https://ete-litellm.ai-models.vpc.res.ibm.com/v1`;
 - set `integration_proxy_ca_pem`, `integration_proxy_tls_cert_pem`, and
   `integration_proxy_tls_key_pem` to the generated integration TLS material.
 

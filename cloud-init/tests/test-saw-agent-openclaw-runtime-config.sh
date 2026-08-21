@@ -33,8 +33,8 @@ if grep -Fq "supportsTemperature" "$agent_playbook"; then
   exit 1
 fi
 
-grep -Fq "inference_model: gpt-5.6-sol" "$agent_vars"
-grep -Fq "inference_provider: openai" "$agent_vars"
+grep -Fq "inference_model: rits/zai-org/glm-5-2-fp8" "$agent_vars"
+grep -Fq "inference_provider: glm" "$agent_vars"
 grep -Fq 'https://saw-integ.${NS}.svc.cluster.local:18083/v1' "$agent_vars"
 grep -Fq 'inference_https_proxy: ""' "$agent_vars"
 

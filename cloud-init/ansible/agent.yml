@@ -9,6 +9,7 @@
     user_name: "{{ provisioning_user | mandatory }}"
     provider_map:
       openai:    { type: openai,      key: OPENAI_API_KEY }
+      glm:       { type: openai,      key: OPENAI_API_KEY }
     inference_provider_cfg: "{{ inference_provider | mandatory }}"
     inference_model_cfg: "{{ inference_model | mandatory }}"
     inference_api_key_cfg: "{{ inference_api_key | mandatory }}"
@@ -79,12 +80,35 @@
           output: 0
           cacheRead: 0
           cacheWrite: 0
+      rits/zai-org/glm-5-2-fp8:
+        id: "{{ inference_model_cfg }}"
+        name: GLM 5.2 FP8
+        api: openai-completions
+        reasoning: false
+        input: [text]
+        contextWindow: 128000
+        maxTokens: 4096
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
     openclaw_known_model_patch_b64: >-
       {{
         {
+          'agents': {
+            'defaults': {
+              'model': {
+                'primary': inference_provider_cfg ~ '/' ~ inference_model_cfg
+              },
+              'models': {
+                (inference_provider_cfg ~ '/' ~ inference_model_cfg): {}
+              }
+            }
+          },
           'models': {
             'providers': {
-              'openai': {
+              (inference_provider_cfg): {
                 'baseUrl': 'https://inference.local/v1',
                 'api': 'openai-completions',
                 'models': [
@@ -975,13 +999,13 @@
                     --mode local \
                     --auth-choice custom-api-key \
                     --custom-base-url "https://inference.local/v1" \
-                    --custom-provider-id "{{ provider_sel.type }}" \
+                    --custom-provider-id "{{ inference_provider_cfg }}" \
                     --custom-model-id "{{ inference_model_cfg }}" \
                     --custom-compatibility openai \
                     --skip-channels \
                     --skip-health
 
-                  if [ "{{ provider_sel.type }}" = "openai" ] && [ "{{ inference_model_cfg }}" = "gpt-5.6-sol" ]; then
+                  if [ "{{ provider_sel.type }}" = "openai" ]; then
                     printf %s "{{ openclaw_known_model_patch_b64 }}" \
                       | base64 -d >/tmp/openclaw-known-model.json
                     openclaw config patch \

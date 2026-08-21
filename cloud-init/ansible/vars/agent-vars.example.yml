@@ -19,8 +19,8 @@ openclaw_proxy_redirect_url: "https://saw-agent-userport.${NS}.dal.dev.cirrus.ib
 openclaw_proxy_allowed_users:
   - alice
 
-inference_provider: openai
-inference_model: gpt-5.6-sol
+inference_provider: glm
+inference_model: rits/zai-org/glm-5-2-fp8
 inference_api_key: ""
 inference_endpoint_url: "https://saw-integ.${NS}.svc.cluster.local:18083/v1"
 inference_https_proxy: ""
