@@ -1,9 +1,9 @@
 ---
 # Copy this file outside the repository, fill every blank secret value, then
-# create Secret/two-vars from it as the vars.yml key.
+# create Secret/saw-integ-vars from it as the vars.yml key.
 saw_vm_role: integration
 namespace: "${NS}"
-hostname: two
+hostname: saw-integ
 
 integration_proxy_port: 18083
 integration_proxy_upstream_url: https://api.openai.com/v1

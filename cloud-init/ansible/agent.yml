@@ -16,7 +16,7 @@
     inference_https_proxy_cfg: "{{ inference_https_proxy | default('') }}"
     provider_sel: "{{ provider_map[inference_provider_cfg] | mandatory }}"
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
-    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:two-vm"
+    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-integ-vm"
     gw_name: openshell
     mtls_gw: openshell-local
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
@@ -27,7 +27,7 @@
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
-    # Encode the complete patch before it crosses the two nested shell parsers
+    # Encode the complete patch before it crosses the saw-integ nested shell parsers
     # (host bash -> sandbox /bin/sh). This preserves JSON arrays exactly.
     openclaw_trusted_proxy_patch_b64: >-
       {{
@@ -149,136 +149,136 @@
           # PATH so bare `openshell` resolves for all become_user tasks.
           PATH: "{{ user_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-    - name: Define VM one persistent disks
+    - name: Define saw-agent persistent disks
       ansible.builtin.set_fact:
-        one_persistent_disks:
-          - serial: ONESTATE
-            mount: /var/lib/saw-one-state
-          - serial: ONEASSETS
-            mount: /var/lib/saw-one-assets
+        saw_agent_persistent_disks:
+          - serial: SAWAGENTSTATE
+            mount: /var/lib/saw-agent-state
+          - serial: SAWAGENTASSETS
+            mount: /var/lib/saw-agent-assets
 
-    - name: Define VM one persistent bind mounts
+    - name: Define saw-agent persistent bind mounts
       ansible.builtin.set_fact:
-        one_state_bind_mounts:
-          - source: /var/lib/saw-one-state/etc-openshell
+        saw_agent_state_bind_mounts:
+          - source: /var/lib/saw-agent-state/etc-openshell
             target: /etc/openshell
             owner: root
             group: root
-          - source: /var/lib/saw-one-state/home-config-openshell
+          - source: /var/lib/saw-agent-state/home-config-openshell
             target: "{{ user_home }}/.config/openshell"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
-          - source: /var/lib/saw-one-state/home-local-state-openshell
+          - source: /var/lib/saw-agent-state/home-local-state-openshell
             target: "{{ user_home }}/.local/state/openshell"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
-          - source: /var/lib/saw-one-state/home-local-share-openshell
+          - source: /var/lib/saw-agent-state/home-local-share-openshell
             target: "{{ user_home }}/.local/share/openshell"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
-        one_asset_bind_mounts:
-          - source: /var/lib/saw-one-assets/home-local-share-containers
+        saw_agent_asset_bind_mounts:
+          - source: /var/lib/saw-agent-assets/home-local-share-containers
             target: "{{ user_home }}/.local/share/containers"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
 
-    - name: Combine VM one persistent bind mounts
+    - name: Combine saw-agent persistent bind mounts
       ansible.builtin.set_fact:
-        one_persistent_bind_mounts: "{{ one_state_bind_mounts + one_asset_bind_mounts }}"
+        saw_agent_persistent_bind_mounts: "{{ saw_agent_state_bind_mounts + saw_agent_asset_bind_mounts }}"
 
-    - name: Locate VM one persistent disks
+    - name: Locate saw-agent persistent disks
       ansible.builtin.shell: |
         set -euo pipefail
         lsblk -rpno NAME,SERIAL | awk '$2=="{{ item.serial }}"{print $1;exit}'
       args:
         executable: /bin/bash
-      loop: "{{ one_persistent_disks }}"
-      register: one_persistent_device_lookup
+      loop: "{{ saw_agent_persistent_disks }}"
+      register: saw_agent_persistent_device_lookup
       changed_when: false
       retries: 12
       delay: 5
-      until: one_persistent_device_lookup.stdout | length > 0
+      until: saw_agent_persistent_device_lookup.stdout | length > 0
 
-    - name: Build VM one persistent disk facts
+    - name: Build saw-agent persistent disk facts
       ansible.builtin.set_fact:
-        one_persistent_devices: "{{ one_persistent_devices | default([]) + [item.item | combine({'device': item.stdout})] }}"
-      loop: "{{ one_persistent_device_lookup.results }}"
+        saw_agent_persistent_devices: "{{ saw_agent_persistent_devices | default([]) + [item.item | combine({'device': item.stdout})] }}"
+      loop: "{{ saw_agent_persistent_device_lookup.results }}"
 
-    - name: Check VM one persistent disk filesystems
+    - name: Check saw-agent persistent disk filesystems
       ansible.builtin.command: "blkid {{ item.device }}"
-      loop: "{{ one_persistent_devices }}"
-      register: one_persistent_blkid
+      loop: "{{ saw_agent_persistent_devices }}"
+      register: saw_agent_persistent_blkid
       changed_when: false
       failed_when: false
 
-    - name: Format blank VM one persistent disks
+    - name: Format blank saw-agent persistent disks
       ansible.builtin.command: "mkfs.xfs -f {{ item.item.device }}"
-      loop: "{{ one_persistent_blkid.results }}"
+      loop: "{{ saw_agent_persistent_blkid.results }}"
       when: item.rc != 0
       changed_when: true
 
-    - name: Read VM one persistent disk UUIDs
+    - name: Read saw-agent persistent disk UUIDs
       ansible.builtin.command: "blkid -s UUID -o value {{ item.device }}"
-      loop: "{{ one_persistent_devices }}"
-      register: one_persistent_uuid_lookup
+      loop: "{{ saw_agent_persistent_devices }}"
+      register: saw_agent_persistent_uuid_lookup
       changed_when: false
 
-    - name: Ensure VM one persistent mount points exist
+    - name: Ensure saw-agent persistent mount points exist
       ansible.builtin.file:
         path: "{{ item.mount }}"
         state: directory
         mode: "0750"
-      loop: "{{ one_persistent_devices }}"
+      loop: "{{ saw_agent_persistent_devices }}"
 
-    - name: Persist VM one disk mounts
+    - name: Persist saw-agent disk mounts
       ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: "^[^#]\\S+\\s+{{ item.item.mount | regex_escape() }}\\s+"
         line: "UUID={{ item.stdout }} {{ item.item.mount }} xfs defaults,nofail 0 2"
         create: true
         mode: "0644"
-      loop: "{{ one_persistent_uuid_lookup.results }}"
+      loop: "{{ saw_agent_persistent_uuid_lookup.results }}"
 
-    - name: Mount VM one persistent disks
+    - name: Mount saw-agent persistent disks
       ansible.builtin.command: "mount {{ item.mount }}"
-      loop: "{{ one_persistent_devices }}"
-      register: one_persistent_mount
-      changed_when: one_persistent_mount.rc == 0
-      failed_when: one_persistent_mount.rc != 0 and 'already mounted' not in one_persistent_mount.stderr
+      loop: "{{ saw_agent_persistent_devices }}"
+      register: saw_agent_persistent_mount
+      changed_when: saw_agent_persistent_mount.rc == 0
+      failed_when: saw_agent_persistent_mount.rc != 0 and 'already mounted' not in saw_agent_persistent_mount.stderr
 
-    - name: Ensure VM one persistent bind sources exist
+    - name: Ensure saw-agent persistent bind sources exist
       ansible.builtin.file:
         path: "{{ item.source }}"
         state: directory
         owner: "{{ item.owner }}"
         group: "{{ item.group }}"
         mode: "0750"
-      loop: "{{ one_persistent_bind_mounts }}"
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
 
-    - name: Ensure VM one persistent bind targets exist
+    - name: Ensure saw-agent persistent bind targets exist
       ansible.builtin.file:
         path: "{{ item.target }}"
         state: directory
         owner: "{{ item.owner }}"
         group: "{{ item.group }}"
         mode: "0750"
-      loop: "{{ one_persistent_bind_mounts }}"
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
 
-    - name: Persist VM one bind mounts
+    - name: Persist saw-agent bind mounts
       ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: "^[^#]\\S+\\s+{{ item.target | regex_escape() }}\\s+"
         line: "{{ item.source }} {{ item.target }} none bind,nofail 0 0"
         create: true
         mode: "0644"
-      loop: "{{ one_persistent_bind_mounts }}"
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
 
-    - name: Mount VM one bind targets
+    - name: Mount saw-agent bind targets
       ansible.builtin.command: "mount {{ item.target }}"
-      loop: "{{ one_persistent_bind_mounts }}"
-      register: one_persistent_bind_mount
-      changed_when: one_persistent_bind_mount.rc == 0
-      failed_when: one_persistent_bind_mount.rc != 0 and 'already mounted' not in one_persistent_bind_mount.stderr
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
+      register: saw_agent_persistent_bind_mount
+      changed_when: saw_agent_persistent_bind_mount.rc == 0
+      failed_when: saw_agent_persistent_bind_mount.rc != 0 and 'already mounted' not in saw_agent_persistent_bind_mount.stderr
 
     - name: Ensure persistent OpenClaw home exists
       ansible.builtin.file:
@@ -797,7 +797,7 @@
           failed_when: false
 
         # OpenShell replaces the OCI entrypoint with its supervisor and treats the
-        # command passed to `sandbox create` as a one-shot exec. Create a durable
+        # command passed to `sandbox create` as a saw-agent-shot exec. Create a durable
         # Ready sandbox first; a dependent unit starts OpenClaw through sandbox
         # exec on every VM boot. This follows secure-agent-workspace PR #34.
         - name: Write OpenClaw sandbox ensure script
