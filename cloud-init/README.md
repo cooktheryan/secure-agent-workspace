@@ -60,6 +60,31 @@ The following values are not secrets and may be documented in the PR:
 - OpenClaw allowed browser identities, for example `alice`.
 - The internal Service URL from VM one to VM two.
 
+## Reference names and how to change them
+
+Several names in these assets are intentionally coupled across OpenShift,
+KubeVirt/Cirrus, cloud-init, TLS, and Ansible. They are safe to change, but
+change the complete reference set together.
+
+| Reference | Default | Used by | If you change it |
+| --- | --- | --- | --- |
+| Agent VM `Server`/Service name | `one` | `kubernetes/one-server.yml`, `Route/one-userport`, operator commands | Rename the Server, route target service, route hostname convention, and any operator commands that reference `server/one`, `vmi/one`, or `svc/one`. |
+| Integration VM `Server`/Service name | `two` | `kubernetes/two-server.yml`, VM one `inference_endpoint_url`, integration TLS SANs | Rename the Server and update VM one to call `https://<new-name>.<namespace>.svc.cluster.local:18083/v1`; regenerate the integration TLS certificate for the new DNS names. |
+| Browser route name and host | `one-userport`, `one-userport.<namespace>.dal.dev.cirrus.ibm.com` | Route creation, Keycloak redirect URI/web origin, `openclaw_route_origin`, `openclaw_proxy_redirect_url` | Update Keycloak redirect/web-origin settings and the corresponding values in `Secret/one-vars`. |
+| VM one state PVC | `one-state-persist` | `kubernetes/one-server.yml` | Update the `persistent-state` PVC claim name before creating `Server/one`. Existing data stays with the old PVC unless copied or recreated through the storage workflow. |
+| VM one asset PVC | `one-assets-persist` | `kubernetes/one-server.yml` | Update the `persistent-assets` PVC claim name before creating `Server/one`. This disk holds rootless container storage and OpenClaw sandbox assets. |
+| VM two persistence PVC | `two-persist` | `kubernetes/two-server.yml` | Update the `persistent-state` PVC claim name before creating `Server/two`. This disk holds the integration proxy state and provider key file. |
+| VM one disk serials | `ONESTATE`, `ONEASSETS` | `kubernetes/one-server.yml`, `ansible/agent.yml` | Change both the Cirrus mount serial and the Ansible disk discovery serial in the same commit. |
+| VM two disk serial | `TWOPERSIST` | `kubernetes/two-server.yml`, `ansible/site.yml` | Change both the Cirrus mount serial and the Ansible disk discovery serial in the same commit. |
+| Secret names | `one-vars`, `two-vars` | Server mounts in `kubernetes/*-server.yml` | Rename the Secret resources and update the `secretName` values on the matching Server manifests. |
+| OpenClaw sandbox name | `sawone` | `ansible/vars/one-vars.example.yml`, persisted OpenShell/Podman state | Changing this creates a different sandbox identity. Preserve data by migrating the old sandbox state or intentionally starting fresh. |
+
+The integration VM name is the most sensitive reference. Kubernetes Service DNS
+solves changing VM IPs, but the DNS name itself is part of the integration
+certificate trust chain. A VM one endpoint URL that says `two` must match a TLS
+certificate that is valid for `two`, `two.<namespace>.svc`, and
+`two.<namespace>.svc.cluster.local`.
+
 ## Deployment process
 
 The examples below assume a namespace stored in `NS`. They deliberately write
@@ -152,6 +177,12 @@ from these commands.
 
 ### 5. Launch the two Cirrus Servers
 
+Do not render these Server manifests with broad `envsubst`. The cloud-init
+payload intentionally contains guest-side shell variables such as
+`${vars_device}` and `${checkout}`; broad environment substitution will replace
+those with empty strings and make cloud-init fail before provisioning starts.
+Use the targeted `${NS}` replacement below.
+
 ```bash
 perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/one-server.yml | oc apply -f -
 perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/two-server.yml | oc apply -f -
@@ -164,6 +195,12 @@ oc -n "$NS" wait --for=condition=Ready vmi/two --timeout=10m
 
 The Route targets only `Service/one` port `userport`. There is intentionally
 no Route to VM two.
+
+VM one reserves the browser-facing userport for the authenticated proxy. The
+raw OpenClaw gateway forward stays localhost-only on `127.0.0.1:18788`, and
+oauth2-proxy listens on `0.0.0.0:18789` before proxying to that local forward.
+This avoids binding the browser route to a guest IP address that can change
+when the VM is recreated.
 
 ```bash
 oc -n "$NS" wait --for=jsonpath='{.metadata.name}'=one service/one --timeout=10m
@@ -210,3 +247,101 @@ https://one-userport.<namespace>.dal.dev.cirrus.ibm.com/
 Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through VM one and sends model traffic from VM one
 to VM two over the internal `Service/two:18083` path.
+
+## Experimental VM persistence
+
+The `feat/two-persist-pvc` branch prototypes persistence for VM one and VM two.
+It expects existing block PVCs in the same namespace as the `Server` resources:
+
+| VM | PVC | Purpose |
+| --- | --- | --- |
+| one | `one-state-persist` | OpenShell gateway/config/state |
+| one | `one-assets-persist` | rootless Podman container storage for OpenClaw sandbox assets |
+| two | `two-persist` | integration proxy configuration and provider credential file |
+
+These PVCs are created outside this repository by the Cirrus/MTOS storage flow.
+In the observed environment they are ordinary Kubernetes
+`PersistentVolumeClaim` objects annotated with `cirrus.ibm.com/volume-type:
+ocsBlock` and submitted by the `mtos-pipeline:mtos-controller` service account.
+No namespace-scoped Cirrus disk/volume CRD was found. After the PVC exists, the
+regular OpenShift/KubeVirt path attaches it to the VM launcher pod.
+
+The observed PVC shape is:
+
+```yaml
+storageClassName: ocs-storagecluster-ceph-rbd
+volumeMode: Block
+accessModes:
+  - ReadWriteMany
+```
+
+While iterating, refresh a persistent disk by deleting the consuming `Server`,
+waiting for its VM/VMI to disappear, refreshing or recreating the PVC through
+the same Cirrus/MTOS flow, then reapplying the `Server`. Do not delete these
+PVCs casually with raw `oc delete pvc`: the backing StorageClass uses a
+delete-style reclaim policy, so PVC deletion should be treated as data loss.
+
+### VM one persistence
+
+During VM one cloud-init:
+
+- `one-state-persist` is attached with disk serial `ONESTATE`;
+- `one-assets-persist` is attached with disk serial `ONEASSETS`;
+- cloud-init leaves both persistent disks untouched so VM startup stays close to
+  the known-good bootstrap path.
+
+During VM one agent provisioning:
+
+- each disk is formatted only when it has no filesystem;
+- the state disk is mounted at `/var/lib/saw-one-state`;
+- the asset disk is mounted at `/var/lib/saw-one-assets`;
+- `/etc/openshell` and OpenShell user config/state directories are
+  bind-mounted from the state disk;
+- `/home/openshell/.local/share/openshell/openclaw-home` is bind-mounted into
+  the OpenClaw sandbox at `/sandbox/.openclaw` through OpenShell's Podman
+  driver config. That host path is itself backed by `one-state-persist`, so
+  `SOUL.md`, `IDENTITY.md`, avatars, sessions, and related OpenClaw files
+  survive sandbox replacement;
+- rootless Podman container storage is bind-mounted from the asset disk.
+
+User systemd unit files are intentionally not persisted. They are reproducible
+deployment artifacts and must be regenerated after the OpenShell binaries exist
+on each fresh VM root disk. Persisting them can make stale enabled units start
+too early during boot and fail before provisioning reinstalls `/usr/local/bin`.
+
+The OpenClaw sandbox unit intentionally reuses an existing Ready sandbox instead
+of deleting it on every provisioning run. If OpenShell reports a persisted
+sandbox as non-Ready after reboot, provisioning can replace the sandbox runtime
+without losing OpenClaw identity assets because OpenClaw's home directory is a
+state-PVC-backed bind mount rather than disposable container writable-layer
+state.
+
+### VM two persistence
+
+VM two expects an existing block PVC named `two-persist` in the same namespace
+as `Server/two`.
+
+During VM two cloud-init:
+
+- the `two-persist` PVC is attached with disk serial `TWOPERSIST`;
+- cloud-init leaves the persistent disk untouched so VM startup stays close to
+  the known-good bootstrap path.
+
+During VM two integration provisioning:
+
+- the disk is formatted only when it has no filesystem;
+- the disk is mounted at `/var/lib/saw-persist`;
+- `/var/lib/saw-persist/etc-saw-integration` is bind-mounted to
+  `/etc/saw-integration`;
+- `/var/lib/saw-persist/var-lib-saw-integration` is bind-mounted to
+  `/var/lib/saw-integration`.
+
+The integration playbook then preserves any existing non-empty
+`/etc/saw-integration/openai.key`. If that file is missing or zero bytes, the
+playbook initializes it from `Secret/two-vars`.
+
+This means the provider key can survive VM two recreation without allowing a
+blank or placeholder value in `Secret/two-vars` to overwrite a working
+persisted key. Other integration configuration, such as `proxy.env` and TLS
+material, is still reconciled from `Secret/two-vars` so VM one and VM two stay
+aligned when the internal bearer or certificates are intentionally rotated.

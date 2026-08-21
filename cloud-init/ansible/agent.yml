@@ -22,6 +22,8 @@
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
     openclaw_proxy_enabled_cfg: true
     openclaw_proxy_port_cfg: "{{ userport | mandatory }}"
+    openclaw_forward_port_cfg: 18788
+    openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
@@ -120,7 +122,7 @@
           - openssh-server
           - binutils
           - nodejs
-          - python3-pip
+          - xfsprogs
         state: present
       register: pkg_install
       retries: 5
@@ -146,6 +148,148 @@
           # /usr/local/bin where the openshell CLI is installed. Set an explicit
           # PATH so bare `openshell` resolves for all become_user tasks.
           PATH: "{{ user_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    - name: Define VM one persistent disks
+      ansible.builtin.set_fact:
+        one_persistent_disks:
+          - serial: ONESTATE
+            mount: /var/lib/saw-one-state
+          - serial: ONEASSETS
+            mount: /var/lib/saw-one-assets
+
+    - name: Define VM one persistent bind mounts
+      ansible.builtin.set_fact:
+        one_state_bind_mounts:
+          - source: /var/lib/saw-one-state/etc-openshell
+            target: /etc/openshell
+            owner: root
+            group: root
+          - source: /var/lib/saw-one-state/home-config-openshell
+            target: "{{ user_home }}/.config/openshell"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+          - source: /var/lib/saw-one-state/home-local-state-openshell
+            target: "{{ user_home }}/.local/state/openshell"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+          - source: /var/lib/saw-one-state/home-local-share-openshell
+            target: "{{ user_home }}/.local/share/openshell"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+        one_asset_bind_mounts:
+          - source: /var/lib/saw-one-assets/home-local-share-containers
+            target: "{{ user_home }}/.local/share/containers"
+            owner: "{{ user_name }}"
+            group: "{{ user_name }}"
+
+    - name: Combine VM one persistent bind mounts
+      ansible.builtin.set_fact:
+        one_persistent_bind_mounts: "{{ one_state_bind_mounts + one_asset_bind_mounts }}"
+
+    - name: Locate VM one persistent disks
+      ansible.builtin.shell: |
+        set -euo pipefail
+        lsblk -rpno NAME,SERIAL | awk '$2=="{{ item.serial }}"{print $1;exit}'
+      args:
+        executable: /bin/bash
+      loop: "{{ one_persistent_disks }}"
+      register: one_persistent_device_lookup
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: one_persistent_device_lookup.stdout | length > 0
+
+    - name: Build VM one persistent disk facts
+      ansible.builtin.set_fact:
+        one_persistent_devices: "{{ one_persistent_devices | default([]) + [item.item | combine({'device': item.stdout})] }}"
+      loop: "{{ one_persistent_device_lookup.results }}"
+
+    - name: Check VM one persistent disk filesystems
+      ansible.builtin.command: "blkid {{ item.device }}"
+      loop: "{{ one_persistent_devices }}"
+      register: one_persistent_blkid
+      changed_when: false
+      failed_when: false
+
+    - name: Format blank VM one persistent disks
+      ansible.builtin.command: "mkfs.xfs -f {{ item.item.device }}"
+      loop: "{{ one_persistent_blkid.results }}"
+      when: item.rc != 0
+      changed_when: true
+
+    - name: Read VM one persistent disk UUIDs
+      ansible.builtin.command: "blkid -s UUID -o value {{ item.device }}"
+      loop: "{{ one_persistent_devices }}"
+      register: one_persistent_uuid_lookup
+      changed_when: false
+
+    - name: Ensure VM one persistent mount points exist
+      ansible.builtin.file:
+        path: "{{ item.mount }}"
+        state: directory
+        mode: "0750"
+      loop: "{{ one_persistent_devices }}"
+
+    - name: Persist VM one disk mounts
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^[^#]\\S+\\s+{{ item.item.mount | regex_escape() }}\\s+"
+        line: "UUID={{ item.stdout }} {{ item.item.mount }} xfs defaults,nofail 0 2"
+        create: true
+        mode: "0644"
+      loop: "{{ one_persistent_uuid_lookup.results }}"
+
+    - name: Mount VM one persistent disks
+      ansible.builtin.command: "mount {{ item.mount }}"
+      loop: "{{ one_persistent_devices }}"
+      register: one_persistent_mount
+      changed_when: one_persistent_mount.rc == 0
+      failed_when: one_persistent_mount.rc != 0 and 'already mounted' not in one_persistent_mount.stderr
+
+    - name: Ensure VM one persistent bind sources exist
+      ansible.builtin.file:
+        path: "{{ item.source }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "0750"
+      loop: "{{ one_persistent_bind_mounts }}"
+
+    - name: Ensure VM one persistent bind targets exist
+      ansible.builtin.file:
+        path: "{{ item.target }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "0750"
+      loop: "{{ one_persistent_bind_mounts }}"
+
+    - name: Persist VM one bind mounts
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^[^#]\\S+\\s+{{ item.target | regex_escape() }}\\s+"
+        line: "{{ item.source }} {{ item.target }} none bind,nofail 0 0"
+        create: true
+        mode: "0644"
+      loop: "{{ one_persistent_bind_mounts }}"
+
+    - name: Mount VM one bind targets
+      ansible.builtin.command: "mount {{ item.target }}"
+      loop: "{{ one_persistent_bind_mounts }}"
+      register: one_persistent_bind_mount
+      changed_when: one_persistent_bind_mount.rc == 0
+      failed_when: one_persistent_bind_mount.rc != 0 and 'already mounted' not in one_persistent_bind_mount.stderr
+
+    - name: Ensure persistent OpenClaw home exists
+      ansible.builtin.file:
+        path: "{{ openclaw_home_host_path }}"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        # The sandbox process identity does not necessarily match the host
+        # openshell UID/GID. Keep the mount narrowly scoped to OpenClaw home,
+        # but make the mounted directory writable inside the sandbox.
+        mode: "0777"
 
     # === [1/8] Podman socket + user manager ===
     # Rootless podman needs the cpu/cpuset/io controllers delegated to the user
@@ -253,8 +397,9 @@
           [openshell.gateway.auth]
           allow_unauthenticated_users = false
 
-          {% if inference_https_proxy_cfg | length > 0 %}
           [openshell.drivers.podman]
+          enable_bind_mounts = true
+          {% if inference_https_proxy_cfg | length > 0 %}
           https_proxy = "{{ inference_https_proxy_cfg }}"
           {% endif %}
 
@@ -265,7 +410,6 @@
         content: |
           [Unit]
           Description=OpenShell Gateway
-          After=default.target
 
           [Service]
           Type=simple
@@ -483,8 +627,9 @@
           [openshell.gateway.auth]
           allow_unauthenticated_users = false
 
-          {% if inference_https_proxy_cfg | length > 0 %}
           [openshell.drivers.podman]
+          enable_bind_mounts = true
+          {% if inference_https_proxy_cfg | length > 0 %}
           https_proxy = "{{ inference_https_proxy_cfg }}"
           {% endif %}
 
@@ -641,9 +786,13 @@
             - openclaw-sandbox.service
           failed_when: false
 
-        # Idempotency: a stale sandbox from a prior run makes create fail.
-        - name: Remove stale openclaw sandbox
-          ansible.builtin.command: "openshell sandbox delete {{ sandbox_name }}"
+        # Persistence: do not delete an existing sandbox during normal
+        # provisioning. The sandbox writable layer is stored under the persisted
+        # rootless Podman storage, so deleting the sandbox would discard
+        # OpenClaw's /sandbox state.
+        - name: Inspect existing OpenClaw sandbox
+          ansible.builtin.command: "openshell sandbox list"
+          register: openclaw_existing_sandboxes
           changed_when: false
           failed_when: false
 
@@ -651,6 +800,78 @@
         # command passed to `sandbox create` as a one-shot exec. Create a durable
         # Ready sandbox first; a dependent unit starts OpenClaw through sandbox
         # exec on every VM boot. This follows secure-agent-workspace PR #34.
+        - name: Write OpenClaw sandbox ensure script
+          ansible.builtin.copy:
+            dest: "{{ user_home }}/.local/bin/ensure-openclaw-sandbox"
+            mode: "0755"
+            content: |
+              #!/usr/bin/env bash
+              set -euo pipefail
+
+              export OPENSHELL_GATEWAY=openshell-local
+              export NO_COLOR=1
+              driver_config_json='{"podman":{"mounts":[{"type":"bind","source":"{{ openclaw_home_host_path }}","target":"/sandbox/.openclaw","read_only":false,"selinux_label":"shared"}]}}'
+
+              sandbox_state=""
+              sandbox_list_ready=false
+              for attempt in $(/usr/bin/seq 1 30); do
+                if sandbox_state="$(
+                  /usr/local/bin/openshell sandbox list \
+                    | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+                )"; then
+                  sandbox_list_ready=true
+                  break
+                fi
+                /usr/bin/sleep 2
+              done
+
+              if [ "${sandbox_list_ready}" != "true" ]; then
+                echo "OpenShell gateway was not ready after waiting for sandbox list" >&2
+                exit 1
+              fi
+
+              if [ "${sandbox_state}" = "Ready" ]; then
+                exit 0
+              fi
+
+              if [ -n "${sandbox_state}" ]; then
+                for attempt in $(/usr/bin/seq 1 10); do
+                  if /usr/local/bin/openshell sandbox delete {{ sandbox_name }}; then
+                    break
+                  fi
+                  /usr/bin/sleep 3
+                done
+
+                /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
+                  | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
+                  | /usr/bin/xargs -r /usr/bin/podman rm -f || true
+              fi
+
+              for attempt in $(/usr/bin/seq 1 3); do
+                if [ "${attempt}" -eq 3 ]; then
+                  exec /usr/local/bin/openshell sandbox create \
+                    --name {{ sandbox_name }} \
+                    --from {{ trusted_sandbox_image_cfg }} \
+                    --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                    --driver-config-json "${driver_config_json}" \
+                    --no-tty \
+                    --memory 12Gi \
+                    --provider {{ inference_provider_name }} \
+                    -- /bin/sh -c "echo sandbox-ready"
+                fi
+
+                /usr/local/bin/openshell sandbox create \
+                  --name {{ sandbox_name }} \
+                  --from {{ trusted_sandbox_image_cfg }} \
+                  --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                  --driver-config-json "${driver_config_json}" \
+                  --no-tty \
+                  --memory 12Gi \
+                  --provider {{ inference_provider_name }} \
+                  -- /bin/sh -c "echo sandbox-ready" && exit 0
+                /usr/bin/sleep 5
+              done
+
         - name: Write openclaw sandbox systemd user unit
           ansible.builtin.copy:
             dest: "{{ user_home }}/.config/systemd/user/openclaw-sandbox.service"
@@ -658,14 +879,12 @@
             content: |
               [Unit]
               Description=OpenClaw gateway (openshell-managed sandbox)
-              After=default.target
 
               [Service]
               Type=oneshot
               Environment=OPENSHELL_GATEWAY=openshell-local
-              ExecStartPre=-/usr/local/bin/openshell sandbox delete {{ sandbox_name }}
-              ExecStart=/usr/local/bin/openshell sandbox create --name {{ sandbox_name }} --from {{ trusted_sandbox_image_cfg }} --policy {{ playbook_dir }}/files/openclaw-policy.yml --no-tty --memory 12Gi --provider {{ inference_provider_name }} -- /bin/sh -c "echo sandbox-ready"
-              ExecStop=-/usr/local/bin/openshell sandbox delete {{ sandbox_name }}
+              Environment=NO_COLOR=1
+              ExecStart=%h/.local/bin/ensure-openclaw-sandbox
               RemainAfterExit=true
               TimeoutStopSec=60s
 
@@ -724,7 +943,7 @@
                   nohup openclaw gateway run \
                     --allow-unconfigured \
                     --bind lan \
-                    --port 18789 \
+                    --port {{ openclaw_forward_port_cfg }} \
                     >/tmp/openclaw-gateway.log 2>&1 </dev/null &
                 ' </dev/null
 
@@ -762,7 +981,7 @@
               [Service]
               Type=simple
               Environment=OPENSHELL_GATEWAY=openshell-local
-              ExecStart=/usr/local/bin/openshell forward start 127.0.0.1:18789 {{ sandbox_name }}
+              ExecStart=/usr/local/bin/openshell forward start 127.0.0.1:{{ openclaw_forward_port_cfg }} {{ sandbox_name }}
               Restart=on-failure
               RestartSec=3s
 
@@ -781,26 +1000,6 @@
           ansible.builtin.file:
             path: "{{ user_home }}/.config/openshell/openclaw-proxy-cookie-secret"
             mode: "0600"
-          when: openclaw_proxy_enabled_cfg | bool
-
-        # The running VMI exposes 18789 and cannot adopt a new port without a
-        # restart. Bind the proxy only to the guest's primary address so the
-        # raw OpenShell forward can safely retain 127.0.0.1:18789.
-        - name: Gather VM primary IPv4 address for OpenClaw proxy
-          ansible.builtin.setup:
-            gather_subset:
-              - "!all"
-              - "!min"
-              - network
-            filter:
-              - ansible_default_ipv4
-          when: openclaw_proxy_enabled_cfg | bool
-
-        - name: Require VM primary IPv4 address for OpenClaw proxy
-          ansible.builtin.assert:
-            that:
-              - ansible_default_ipv4.address | default('') | length > 0
-            fail_msg: Cannot resolve the VM primary IPv4 address for oauth2-proxy.
           when: openclaw_proxy_enabled_cfg | bool
 
         - name: Install optional Keycloak private CA
@@ -834,8 +1033,8 @@
             dest: "{{ user_home }}/.config/openshell/openclaw-proxy.env"
             mode: "0600"
             content: |
-              OAUTH2_PROXY_HTTP_ADDRESS={{ ansible_default_ipv4.address }}:{{ openclaw_proxy_port_cfg }}
-              OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:18789
+              OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:{{ openclaw_proxy_port_cfg }}
+              OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:{{ openclaw_forward_port_cfg }}
               OAUTH2_PROXY_PROVIDER=oidc
               OAUTH2_PROXY_OIDC_ISSUER_URL={{ oidc_issuer }}
               OAUTH2_PROXY_CLIENT_ID={{ oidc_client_id }}
@@ -880,17 +1079,75 @@
               WantedBy=default.target
           when: openclaw_proxy_enabled_cfg | bool
 
-        - name: Enable + start openclaw services
-          ansible.builtin.systemd:
-            name: "{{ item }}"
-            scope: user
-            enabled: true
-            state: started
-            daemon_reload: true
-          loop:
-            - openclaw-sandbox.service
-            - openclaw-gateway.service
-            - openclaw-forward.service
+        - name: Enable + start openclaw services with diagnostics
+          block:
+            - name: Start openclaw services
+              ansible.builtin.systemd:
+                name: "{{ item }}"
+                scope: user
+                enabled: true
+                state: started
+                daemon_reload: true
+              register: openclaw_service_start
+              failed_when: false
+              loop:
+                - openclaw-sandbox.service
+                - openclaw-gateway.service
+                - openclaw-forward.service
+
+            - name: Verify openclaw services are active
+              ansible.builtin.command: >-
+                systemctl --user is-active
+                openclaw-sandbox.service
+                openclaw-gateway.service
+                openclaw-forward.service
+              register: openclaw_services_active
+              changed_when: false
+              failed_when: openclaw_services_active.rc != 0
+          rescue:
+            - name: Read OpenClaw user service status
+              ansible.builtin.command: >-
+                systemctl --user status
+                openclaw-sandbox.service
+                openclaw-gateway.service
+                openclaw-forward.service
+                --no-pager -l
+              register: openclaw_user_service_status
+              changed_when: false
+              failed_when: false
+
+            - name: Read OpenClaw user service journal
+              ansible.builtin.command: >-
+                journalctl --user
+                -u openclaw-sandbox.service
+                -u openclaw-gateway.service
+                -u openclaw-forward.service
+                -n 160 --no-pager -o cat
+              register: openclaw_user_service_journal
+              changed_when: false
+              failed_when: false
+
+            - name: Inspect OpenClaw sandbox list after service start failure
+              ansible.builtin.command: openshell sandbox list
+              register: openclaw_service_failure_sandboxes
+              changed_when: false
+              failed_when: false
+
+            - name: Display OpenClaw user service status
+              ansible.builtin.debug:
+                var: openclaw_user_service_status.stdout_lines
+
+            - name: Display OpenClaw user service journal
+              ansible.builtin.debug:
+                var: openclaw_user_service_journal.stdout_lines
+
+            - name: Display OpenClaw sandbox list after service start failure
+              ansible.builtin.debug:
+                var: openclaw_service_failure_sandboxes.stdout_lines
+
+            - name: Fail provisioning after OpenClaw service diagnostics
+              ansible.builtin.fail:
+                msg: OpenClaw user services failed to start; see diagnostics above.
 
         - name: Enable + start OpenClaw auth proxy
           ansible.builtin.systemd:
@@ -906,7 +1163,7 @@
           block:
             - name: Wait for OpenClaw auth proxy readiness
               ansible.builtin.uri:
-                url: "http://{{ ansible_default_ipv4.address }}:{{ openclaw_proxy_port_cfg }}/ready"
+                url: "http://127.0.0.1:{{ openclaw_proxy_port_cfg }}/ready"
                 status_code: [200]
               register: openclaw_proxy_health
               until: openclaw_proxy_health.status == 200
@@ -933,9 +1190,9 @@
 
         - name: Verify openclaw gateway health with failure diagnostics
           block:
-            - name: Wait for openclaw gateway health (host-forwarded :18789)
+            - name: Wait for openclaw gateway health through raw localhost forward
               ansible.builtin.uri:
-                url: http://127.0.0.1:18789/health
+                url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/health
                 status_code: [200]
                 return_content: true
               register: openclaw_health
@@ -957,7 +1214,9 @@
 
             - name: Fail provisioning after OpenClaw diagnostics
               ansible.builtin.fail:
-                msg: OpenClaw gateway did not become healthy on port 18789.
+                msg: >-
+                  OpenClaw gateway did not become healthy on raw localhost
+                  forward port {{ openclaw_forward_port_cfg }}.
 
     - name: Provisioning complete
       ansible.builtin.debug:
