@@ -49,12 +49,21 @@ Feature: saw-agent persistent OpenClaw state
       When agent provisioning creates the OpenClaw sandbox
       Then the sandbox identity is openclaw-saw
 
-  Rule: While saw-agent persists OpenClaw identity assets, the agent playbook shall mount the OpenClaw home from the state PVC into the sandbox.
+  Rule: While saw-agent persists OpenClaw identity assets, the agent playbook shall mount durable OpenClaw state into the sandbox.
 
     Scenario: OpenClaw workspace files survive sandbox replacement
-      Given saw-agent has a state PVC for OpenClaw home files
+      Given saw-agent has persistent storage for OpenClaw home files
       When the OpenClaw sandbox is created
-      Then the sandbox receives a writable host bind mount at the OpenClaw home path
+      Then the sandbox receives writable durable OpenClaw state
+
+  Rule: While saw-agent deploys the OpenClaw 2026.8.1 beta2 demo runtime, the agent playbook shall use the demo CSB entrypoint and beta2 database bootstrap.
+
+    Scenario: OpenClaw beta2 starts with the demo runtime contract
+      Given saw-agent is deployed for the OpenClaw SAW demo
+      When agent provisioning creates the OpenClaw sandbox
+      Then the sandbox runs with the demo image user
+      And OpenClaw state is mounted at the demo persist path
+      And the beta2 database bootstrap is available before the gateway starts
 
   Rule: If saw-agent has a persisted non-Ready OpenClaw sandbox, then the agent playbook shall replace it before creating the gateway sandbox.
 

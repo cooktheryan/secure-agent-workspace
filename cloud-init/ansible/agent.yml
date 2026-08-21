@@ -18,6 +18,10 @@
     provider_sel: "{{ provider_map[inference_provider_cfg] | mandatory }}"
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
     trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-integ-vm"
+    openclaw_demo_csb_enabled_cfg: "{{ openclaw_demo_csb_enabled | default(false) }}"
+    openclaw_sandbox_uid_cfg: "{{ openclaw_sandbox_uid | default('65532') }}"
+    openclaw_sandbox_gid_cfg: "{{ openclaw_sandbox_gid | default(openclaw_sandbox_uid_cfg) }}"
+    openclaw_demo_podman_volume: openclaw-saw-data
     gw_name: openshell
     mtls_gw: openshell-local
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
@@ -39,6 +43,14 @@
     forge_relay_identity_path: "{{ user_home }}/.config/forge-ui/relay-identity.json"
     forge_gateway_token_path: "{{ user_home }}/.config/forge-ui/gateway-token"
     forge_relay_store_dir: "{{ user_home }}/.local/share/forge-relay"
+    openclaw_provider_config:
+      api: openai-completions
+      baseUrl: https://inference.local/v1
+      apiKey: unused
+      models:
+        - id: "{{ inference_model_cfg }}"
+          name: "{{ inference_model_cfg }}"
+    openclaw_providers_json: "{{ {inference_provider_cfg: openclaw_provider_config} | to_json }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
     # Encode the complete patch before it crosses the saw-integ nested shell parsers
     # (host bash -> sandbox /bin/sh). This preserves JSON arrays exactly.
@@ -382,6 +394,14 @@
         # but make the mounted directory writable inside the sandbox.
         mode: "0777"
 
+    - name: Render OpenClaw sandbox policy
+      ansible.builtin.template:
+        src: openclaw-policy.yml.j2
+        dest: "{{ user_home }}/.config/openshell/openclaw-policy.yml"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"
+
     # === [1/8] Podman socket + user manager ===
     # Rootless podman needs the cpu/cpuset/io controllers delegated to the user
     # slice; systemd does not delegate them by default, so sandbox creation
@@ -478,7 +498,7 @@
         - "{{ user_home }}/.config/forge-ui"
         - "{{ user_home }}/.local/bin"
         - "{{ forge_relay_store_dir }}"
-      when: forge_ui_enabled_cfg | bool
+      when: (forge_ui_enabled_cfg | bool) or (openclaw_demo_csb_enabled_cfg | bool)
 
     - name: Generate persistent Forge relay gateway token
       ansible.builtin.command: >-
@@ -486,8 +506,7 @@
       args:
         creates: "{{ forge_gateway_token_path }}"
       when:
-        - forge_ui_enabled_cfg | bool
-        - forge_relay_enabled_cfg | bool
+        - (forge_ui_enabled_cfg | bool and forge_relay_enabled_cfg | bool) or (openclaw_demo_csb_enabled_cfg | bool)
       no_log: true
 
     - name: Protect persistent Forge relay gateway token
@@ -497,8 +516,7 @@
         group: "{{ user_name }}"
         mode: "0600"
       when:
-        - forge_ui_enabled_cfg | bool
-        - forge_relay_enabled_cfg | bool
+        - (forge_ui_enabled_cfg | bool and forge_relay_enabled_cfg | bool) or (openclaw_demo_csb_enabled_cfg | bool)
 
     - name: Generate persistent Forge relay device identity
       ansible.builtin.shell: |
@@ -1180,7 +1198,16 @@
 
               export OPENSHELL_GATEWAY=openshell-local
               export NO_COLOR=1
+              {% if openclaw_demo_csb_enabled_cfg | bool %}
+              /usr/bin/podman volume create --ignore {{ openclaw_demo_podman_volume }} >/dev/null
+              volume_path="$(/usr/bin/podman volume inspect {{ openclaw_demo_podman_volume }} --format '{{ "{{" }}.Mountpoint{{ "}}" }}')"
+              /usr/bin/podman unshare /usr/bin/mkdir -p "${volume_path}/workspace" "${volume_path}/.openclaw"
+              /usr/bin/podman unshare /usr/bin/chown -R {{ openclaw_sandbox_uid_cfg }}:{{ openclaw_sandbox_gid_cfg }} "${volume_path}"
+              /usr/bin/podman unshare /usr/bin/chmod 0700 "${volume_path}"
+              driver_config_json='{"podman":{"mounts":[{"type":"volume","source":"{{ openclaw_demo_podman_volume }}","target":"/sandbox/persist","read_only":false}]}}'
+              {% else %}
               driver_config_json='{"podman":{"mounts":[{"type":"bind","source":"{{ openclaw_home_host_path }}","target":"/sandbox/.openclaw","read_only":false,"selinux_label":"shared"}]}}'
+              {% endif %}
 
               sandbox_state=""
               sandbox_list_ready=false
@@ -1222,8 +1249,11 @@
                   exec /usr/local/bin/openshell sandbox create \
                     --name {{ sandbox_name }} \
                     --from {{ trusted_sandbox_image_cfg }} \
-                    --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                    --policy {{ user_home }}/.config/openshell/openclaw-policy.yml \
                     --driver-config-json "${driver_config_json}" \
+                    {% if openclaw_demo_csb_enabled_cfg | bool %}
+                    --upload {{ playbook_dir }}/files/bootstrap-openclaw-beta2-db.mjs:/tmp/bootstrap-openclaw-beta2-db.mjs \
+                    {% endif %}
                     --no-tty \
                     --memory 12Gi \
                     --provider {{ inference_provider_name }} \
@@ -1233,8 +1263,11 @@
                 /usr/local/bin/openshell sandbox create \
                   --name {{ sandbox_name }} \
                   --from {{ trusted_sandbox_image_cfg }} \
-                  --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                  --policy {{ user_home }}/.config/openshell/openclaw-policy.yml \
                   --driver-config-json "${driver_config_json}" \
+                  {% if openclaw_demo_csb_enabled_cfg | bool %}
+                  --upload {{ playbook_dir }}/files/bootstrap-openclaw-beta2-db.mjs:/tmp/bootstrap-openclaw-beta2-db.mjs \
+                  {% endif %}
                   --no-tty \
                   --memory 12Gi \
                   --provider {{ inference_provider_name }} \
@@ -1270,10 +1303,35 @@
               set -euo pipefail
 
               export OPENSHELL_GATEWAY=openshell-local
+              gateway_token="$(cat "{{ forge_gateway_token_path }}")"
 
               exec /usr/local/bin/openshell sandbox exec \
                 --name {{ sandbox_name }} \
                 --no-tty \
+                {% if openclaw_demo_csb_enabled_cfg | bool %}
+                --env OPENCLAW_GATEWAY_TOKEN="${gateway_token}" \
+                --env OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw \
+                --env OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace \
+                --env OPENCLAW_NO_RESPAWN=1 \
+                --env OPENCLAW_WIDGET_PORT=18790 \
+                --env OPENCLAW_PUBLIC_URL={{ openclaw_route_origin_cfg }} \
+                --env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }} \
+                --env OPENCLAW_PROVIDERS='{{ openclaw_providers_json }}' \
+                -- /bin/sh -c '
+                  set -eu
+                  export HOME=/sandbox
+                  export OPENCLAW_HOME=/sandbox
+                  export SQLITE_TMPDIR=/tmp
+                  export TMPDIR=/tmp
+                  mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
+
+                  if openclaw --version | grep -Fq "2026.8.1-beta.2"; then
+                    node /tmp/bootstrap-openclaw-beta2-db.mjs
+                  fi
+
+                  nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                ' </dev/null
+                {% else %}
                 --env CUSTOM_API_KEY=proxy-managed \
                 -- /bin/sh -c '
                   set -eu
@@ -1316,6 +1374,7 @@
                     --port {{ openclaw_forward_port_cfg }} \
                     >/tmp/openclaw-gateway.log 2>&1 </dev/null &
                 ' </dev/null
+                {% endif %}
 
         - name: Write openclaw gateway systemd user unit
           ansible.builtin.copy:
@@ -1562,11 +1621,12 @@
           block:
             - name: Wait for openclaw gateway health through raw localhost forward
               ansible.builtin.uri:
-                url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/health
+                url: >-
+                  http://127.0.0.1:{{ openclaw_forward_port_cfg }}{% if openclaw_demo_csb_enabled_cfg | bool %}/healthz{% else %}/health{% endif %}
                 status_code: [200]
                 return_content: true
               register: openclaw_health
-              until: openclaw_health.status == 200 and 'ok' in (openclaw_health.content | default(''))
+              until: openclaw_health.status == 200 and (('ok' in (openclaw_health.content | default(''))) or ('ready' in (openclaw_health.content | default(''))))
               retries: 30
               delay: 5
           rescue:
