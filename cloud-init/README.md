@@ -297,8 +297,9 @@ During VM one agent provisioning:
 - the asset disk is mounted at `/var/lib/saw-one-assets`;
 - `/etc/openshell` and OpenShell user config/state directories are
   bind-mounted from the state disk;
-- `/var/lib/saw-one-state/openclaw-home` is bind-mounted into the OpenClaw
-  sandbox at `/sandbox/.openclaw` through OpenShell's Podman driver config, so
+- `/home/openshell/.local/share/openshell/openclaw-home` is bind-mounted into
+  the OpenClaw sandbox at `/sandbox/.openclaw` through OpenShell's Podman
+  driver config. That host path is itself backed by `one-state-persist`, so
   `SOUL.md`, `IDENTITY.md`, avatars, sessions, and related OpenClaw files
   survive sandbox replacement;
 - rootless Podman container storage is bind-mounted from the asset disk.

@@ -23,7 +23,7 @@
     openclaw_proxy_enabled_cfg: true
     openclaw_proxy_port_cfg: "{{ userport | mandatory }}"
     openclaw_forward_port_cfg: 18788
-    openclaw_home_host_path: /var/lib/saw-one-state/openclaw-home
+    openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
@@ -255,17 +255,6 @@
         mode: "0750"
       loop: "{{ one_persistent_bind_mounts }}"
 
-    - name: Ensure persistent OpenClaw home exists
-      ansible.builtin.file:
-        path: "{{ openclaw_home_host_path }}"
-        state: directory
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        # The sandbox process identity does not necessarily match the host
-        # openshell UID/GID. Keep the mount narrowly scoped to OpenClaw home,
-        # but make the mounted directory writable inside the sandbox.
-        mode: "0777"
-
     - name: Ensure VM one persistent bind targets exist
       ansible.builtin.file:
         path: "{{ item.target }}"
@@ -290,6 +279,17 @@
       register: one_persistent_bind_mount
       changed_when: one_persistent_bind_mount.rc == 0
       failed_when: one_persistent_bind_mount.rc != 0 and 'already mounted' not in one_persistent_bind_mount.stderr
+
+    - name: Ensure persistent OpenClaw home exists
+      ansible.builtin.file:
+        path: "{{ openclaw_home_host_path }}"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        # The sandbox process identity does not necessarily match the host
+        # openshell UID/GID. Keep the mount narrowly scoped to OpenClaw home,
+        # but make the mounted directory writable inside the sandbox.
+        mode: "0777"
 
     # === [1/8] Podman socket + user manager ===
     # Rootless podman needs the cpu/cpuset/io controllers delegated to the user
