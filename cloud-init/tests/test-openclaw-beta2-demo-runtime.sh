@@ -41,9 +41,10 @@ if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook";
   exit 1
 fi
 grep -Fq 'if [ -x /usr/local/bin/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq 'nohup /usr/local/bin/entrypoint.sh' "$agent_playbook"
+grep -Fq 'nohup /usr/local/bin/entrypoint.sh \' "$agent_playbook"
+grep -Fq 'openclaw gateway run \' "$agent_playbook"
 grep -Fq 'elif [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq 'nohup /app/entrypoint.sh' "$agent_playbook"
+grep -Fq 'nohup /app/entrypoint.sh \' "$agent_playbook"
 grep -Fq 'nohup openclaw gateway run' "$agent_playbook"
 grep -Fq -- '--port {{ openclaw_forward_port_cfg }}' "$agent_playbook"
 
