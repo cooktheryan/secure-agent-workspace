@@ -33,11 +33,3 @@ Feature: Forge UI side-by-side preview
       When the Forge UI preview is not ready
       Then the provisioning log includes Forge UI user service diagnostics
       And the provisioning log includes Forge UI container diagnostics
-
-  Rule: Where the Forge UI image registry requires authentication, saw-agent provisioning shall authenticate rootless Podman without logging the registry password.
-
-    Scenario: Private Forge UI image is pulled with registry credentials
-      Given saw-agent vars include Forge UI registry credentials
-      When saw-agent provisioning starts the Forge UI preview
-      Then rootless Podman is authenticated before pulling the Forge UI image
-      And the provisioning log does not print the registry password

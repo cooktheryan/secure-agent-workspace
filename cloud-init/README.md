@@ -268,18 +268,9 @@ The example vars default to the AMD64 image published for the VM-hosted preview:
 quay.io/rcook/rh-forge-ui:demo1-amd64
 ```
 
-If that image is private, set these values in `.secrets/saw-agent-vars.yml`
-before creating or updating `Secret/saw-agent-vars`:
-
-```yaml
-forge_ui_registry_server: quay.io
-forge_ui_registry_username: "<quay-user-or-robot>"
-forge_ui_registry_password: "<quay-password-or-robot-token>"
-```
-
-The playbook runs `podman login` as the `openshell` user with
-`--password-stdin` and suppresses task logging for the password-bearing step.
-Do not commit the rendered secret file.
+If that image is private, configure rootless Podman auth for the `openshell`
+user before enabling the service, or temporarily make the repository public
+while validating the preview.
 
 Deploy the VM-hosted route after `Server/saw-agent` has been applied:
 
