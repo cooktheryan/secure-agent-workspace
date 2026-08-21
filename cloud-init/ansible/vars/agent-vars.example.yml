@@ -25,6 +25,7 @@ forge_ui_container_port: 8080
 forge_ui_image: "quay.io/rcook/rh-forge-ui:demo1-amd64"
 forge_relay_enabled: true
 forge_relay_port: 18091
+forge_gateway_proxy_port: 18092
 forge_relay_image: "quay.io/rcook/rh-forge-ui-relay:demo1-amd64"
 forge_relay_user: alice
 

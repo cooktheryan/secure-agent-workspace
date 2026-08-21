@@ -34,6 +34,7 @@
     forge_relay_enabled_cfg: "{{ forge_relay_enabled | default(false) }}"
     forge_relay_image_cfg: "{{ forge_relay_image | default(\"\") }}"
     forge_relay_port_cfg: "{{ forge_relay_port | default(18091) }}"
+    forge_gateway_proxy_port_cfg: "{{ forge_gateway_proxy_port | default(18092) }}"
     forge_relay_user_cfg: "{{ forge_relay_user | default((openclaw_proxy_allowed_users | default(['alice']))[0]) }}"
     forge_relay_identity_path: "{{ user_home }}/.config/forge-ui/relay-identity.json"
     forge_gateway_token_path: "{{ user_home }}/.config/forge-ui/gateway-token"
@@ -603,6 +604,27 @@
                       add_header Referrer-Policy "no-referrer-when-downgrade" always;
                   }
               }
+
+              server {
+                  listen 127.0.0.1:{{ forge_gateway_proxy_port_cfg }};
+                  server_name _;
+
+                  location / {
+                      proxy_pass http://127.0.0.1:{{ openclaw_forward_port_cfg }};
+                      proxy_http_version 1.1;
+                      proxy_set_header Upgrade $http_upgrade;
+                      proxy_set_header Connection $connection_upgrade;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP 127.0.0.1;
+                      proxy_set_header X-Forwarded-For 127.0.0.1;
+                      proxy_set_header X-Forwarded-Proto http;
+                      proxy_set_header X-Forwarded-Host saw-agent-forge-relay.local;
+                      proxy_set_header X-Forwarded-Preferred-Username "{{ forge_relay_user_cfg }}";
+                      proxy_read_timeout 300s;
+                      proxy_send_timeout 300s;
+                      proxy_buffering off;
+                  }
+              }
           }
       when:
         - forge_ui_enabled_cfg | bool
@@ -627,7 +649,7 @@
             --network host \
             -e FORGE_RELAY_HOST=127.0.0.1 \
             -e FORGE_RELAY_PORT={{ forge_relay_port_cfg }} \
-            -e FORGE_GATEWAY_URL=ws://127.0.0.1:{{ openclaw_forward_port_cfg }} \
+            -e FORGE_GATEWAY_URL=ws://127.0.0.1:{{ forge_gateway_proxy_port_cfg }} \
             -e FORGE_GATEWAY_TOKEN="${gateway_token}" \
             -e FORGE_RELAY_IDENTITY_FILE=/var/lib/forge/identity.json \
             -e FORGE_STORE_DIR=/var/lib/forge-store \
@@ -650,7 +672,8 @@
           [Unit]
           Description=Forge relay for VM-hosted Forge UI
           Requires=openclaw-forward.service
-          After=openclaw-forward.service
+          Requires=forge-ui.service
+          After=openclaw-forward.service forge-ui.service
           PartOf=openclaw-sandbox.service
 
           [Service]
@@ -700,13 +723,8 @@
         content: |
           [Unit]
           Description=Forge UI side-by-side preview
-          {% if forge_relay_enabled_cfg | bool %}
-          Requires=forge-relay.service
-          After=forge-relay.service
-          {% else %}
           After=podman.socket
           Wants=podman.socket
-          {% endif %}
 
           [Service]
           Type=simple
@@ -1252,17 +1270,11 @@
               set -euo pipefail
 
               export OPENSHELL_GATEWAY=openshell-local
-              {% if forge_relay_enabled_cfg | bool %}
-              gateway_token="$(cat "{{ forge_gateway_token_path }}")"
-              {% endif %}
 
               exec /usr/local/bin/openshell sandbox exec \
                 --name {{ sandbox_name }} \
                 --no-tty \
                 --env CUSTOM_API_KEY=proxy-managed \
-                {% if forge_relay_enabled_cfg | bool %}
-                --env OPENCLAW_GATEWAY_TOKEN="${gateway_token}" \
-                {% endif %}
                 -- /bin/sh -c '
                   set -eu
                   export HOME=/sandbox
@@ -1295,11 +1307,7 @@
                     | base64 -d >/tmp/openclaw-trusted-proxy.json
                   openclaw config patch \
                     --file /tmp/openclaw-trusted-proxy.json
-                  if [ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ]; then
-                    openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}" >/dev/null
-                  else
-                    openclaw config unset gateway.auth.token || true
-                  fi
+                  openclaw config unset gateway.auth.token || true
                   openclaw config validate --json
 
                   nohup openclaw gateway run \
@@ -1585,6 +1593,23 @@
           block:
             - name: Enable + start Forge relay when configured
               ansible.builtin.systemd:
+                name: forge-ui.service
+                scope: user
+                enabled: true
+                state: started
+                daemon_reload: true
+
+            - name: Wait for Forge UI readiness
+              ansible.builtin.uri:
+                url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/"
+                status_code: [200]
+              register: forge_ui_health
+              until: forge_ui_health.status == 200
+              retries: 20
+              delay: 3
+
+            - name: Enable + start Forge relay when configured
+              ansible.builtin.systemd:
                 name: forge-relay.service
                 scope: user
                 enabled: true
@@ -1601,23 +1626,6 @@
               retries: 20
               delay: 3
               when: forge_relay_enabled_cfg | bool
-
-            - name: Enable + start Forge UI preview
-              ansible.builtin.systemd:
-                name: forge-ui.service
-                scope: user
-                enabled: true
-                state: started
-                daemon_reload: true
-
-            - name: Wait for Forge UI readiness
-              ansible.builtin.uri:
-                url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/"
-                status_code: [200]
-              register: forge_ui_health
-              until: forge_ui_health.status == 200
-              retries: 20
-              delay: 3
 
             - name: Wait for Forge UI relay config readiness
               ansible.builtin.uri:
