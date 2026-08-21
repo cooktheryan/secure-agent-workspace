@@ -244,8 +244,14 @@ daily-briefing skill installed into OpenClaw backend ID `default`.
 PR #6 treats Forge UI and relay as part of the full demo. They are built
 inside OpenShift and remain private in the namespace internal registry.
 
-- [ ] Decide whether Forge UI/relay belongs in this SAW branch or stays in the
-  demo repo orchestration.
+- [x] Add a UI-only Forge route for side-by-side preview without relay,
+  injector, OpenClaw gateway token, or OpenClaw route replacement.
+  - Manifest: `cloud-init/kubernetes/forge-ui-ui-only.yml`
+  - Route: `rh-forge-ui.${NS}.dal.dev.cirrus.ibm.com`
+  - Expected first-step limitation: the static UI may report disconnected relay
+    or gateway state until the relay integration is added.
+- [ ] Decide whether Forge UI build orchestration belongs in this SAW branch or
+  stays in the demo repo orchestration.
 - [ ] If included here, add build/deploy flow for:
   - `rh-forge-ui`
   - `rh-forge-ui-relay`

@@ -250,6 +250,47 @@ Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through saw-agent and sends model traffic from saw-agent
 to saw-integ over the internal `Service/saw-integ:18083` path.
 
+## Optional Forge UI-only side-by-side preview
+
+The Forge UI can be exposed beside the current OpenClaw route before relay,
+gateway-token, or OpenClaw replacement work is enabled. This preview deploys
+only the static UI container. A disconnected relay/gateway state in the page is
+expected until the relay integration is added later.
+
+The UI image must already exist in the OpenShift internal registry as
+`image-registry.openshift-image-registry.svc:5000/${NS}/rh-forge-ui:demo1`.
+This repository does not build that image in the UI-only step.
+
+The side-by-side Forge UI route host is:
+
+```text
+rh-forge-ui.<namespace>.dal.dev.cirrus.ibm.com
+```
+
+```bash
+cd cloud-init
+
+export NS='rh-vm-test1'
+
+perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/forge-ui-ui-only.yml | oc apply -f -
+
+oc -n "$NS" rollout status deployment/rh-forge-ui --timeout=5m
+oc -n "$NS" get route rh-forge-ui \
+  -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+The existing OpenClaw route remains:
+
+```text
+https://saw-agent-userport.<namespace>.dal.dev.cirrus.ibm.com/
+```
+
+Remove only the side-by-side UI preview with:
+
+```bash
+perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/forge-ui-ui-only.yml | oc delete -f -
+```
+
 ## Experimental VM persistence
 
 The `feat/openclaw-demo-alignment` branch prototypes persistence for saw-agent and saw-integ.
