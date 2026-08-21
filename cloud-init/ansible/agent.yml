@@ -132,6 +132,25 @@
       delay: 15
       until: dnf_makecache.rc == 0
 
+    - name: Wait for required RHEL packages to become available
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dnf -q makecache --refresh
+        for pkg in \
+          telnet git ansible-core podman fuse-overlayfs slirp4netns \
+          curl jq lsof qemu-guest-agent openssh-clients openssh-server \
+          binutils nodejs xfsprogs
+        do
+          dnf -q list "${pkg}" >/dev/null
+        done
+      args:
+        executable: /bin/bash
+      register: dnf_package_availability
+      changed_when: false
+      retries: 30
+      delay: 20
+      until: dnf_package_availability.rc == 0
+
     - name: Ensure required packages are installed
       ansible.builtin.dnf:
         name:
@@ -156,8 +175,8 @@
         update_cache: true
         state: present
       register: pkg_install
-      retries: 5
-      delay: 15
+      retries: 10
+      delay: 20
       until: pkg_install is succeeded
 
     - name: Resolve target user account
