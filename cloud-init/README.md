@@ -78,6 +78,7 @@ change the complete reference set together.
 | saw-integ disk serial | `SAWINTEGPERSIST` | `kubernetes/integrations-server.yml`, `ansible/site.yml` | Change both the Cirrus mount serial and the Ansible disk discovery serial in the same commit. |
 | Secret names | `saw-agent-vars`, `saw-integ-vars` | Server mounts in `kubernetes/*-server.yml` | Rename the Secret resources and update the `secretName` values on the matching Server manifests. |
 | OpenClaw sandbox name | `openclaw-saw` | `ansible/vars/agent-vars.example.yml`, persisted OpenShell/Podman state | Changing this creates a different sandbox identity. Preserve data by migrating the old sandbox state or intentionally starting fresh. |
+| OpenClaw runtime image | `quay.io/rh-forge/openclaw-saw:2026.8.1-beta.2-20260821160256` | `ansible/vars/agent-vars.example.yml`, trusted sandbox wrapper build, persisted rootless Podman image store | Changing this does not affect an existing sandbox until the trusted wrapper image is rebuilt and the sandbox is recreated. The OpenClaw home remains persistent through the state PVC. |
 
 The integration VM name is the most sensitive reference. Kubernetes Service DNS
 solves changing VM IPs, but the DNS name itself is part of the integration

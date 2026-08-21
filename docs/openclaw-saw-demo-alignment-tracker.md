@@ -83,8 +83,11 @@ credentials staying on the integration VM side of the boundary.
 ### OpenClaw runtime and image alignment
 
 - [ ] Pin the OpenClaw runtime/image to demo version `2026.8.1-beta.2`.
-  - Current status: intentionally deferred. Earlier image/version work made the
-    deployment unstable, so do this only as a separate tested checkpoint.
+  - Selected image:
+    `quay.io/rh-forge/openclaw-saw:2026.8.1-beta.2-20260821160256`
+  - Current status: code pin started as a separate tested checkpoint. Earlier
+    image/version work made the deployment unstable, so do not check this off
+    until the live sandbox has been recreated from this image and the UI passes.
   - Validation gate: deploy fresh `saw-agent`, confirm `/ready`, login as
     `alice`, and complete one successful LLM request before committing.
 - [ ] Confirm whether all seven runtime images are already published under the
