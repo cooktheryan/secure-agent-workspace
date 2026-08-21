@@ -105,6 +105,15 @@
   tasks:
     # Self-heal a flaky cloud-init dnf: reinstall (idempotent) with retries so a
     # single transient mirror/network hiccup doesn't break the whole run.
+    - name: Refresh DNF metadata before package install
+      ansible.builtin.command:
+        cmd: dnf makecache --refresh
+      register: dnf_makecache
+      changed_when: false
+      retries: 5
+      delay: 15
+      until: dnf_makecache.rc == 0
+
     - name: Ensure required packages are installed
       ansible.builtin.dnf:
         name:
