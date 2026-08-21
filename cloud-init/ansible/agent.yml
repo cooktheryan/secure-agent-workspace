@@ -9,6 +9,7 @@
     user_name: "{{ provisioning_user | mandatory }}"
     provider_map:
       openai:    { type: openai,      key: OPENAI_API_KEY }
+      glm:       { type: openai,      key: OPENAI_API_KEY }
     inference_provider_cfg: "{{ inference_provider | mandatory }}"
     inference_model_cfg: "{{ inference_model | mandatory }}"
     inference_api_key_cfg: "{{ inference_api_key | mandatory }}"
@@ -16,7 +17,7 @@
     inference_https_proxy_cfg: "{{ inference_https_proxy | default('') }}"
     provider_sel: "{{ provider_map[inference_provider_cfg] | mandatory }}"
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
-    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:two-vm"
+    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-integ-vm"
     gw_name: openshell
     mtls_gw: openshell-local
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
@@ -26,8 +27,12 @@
     openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
+    forge_ui_enabled_cfg: "{{ forge_ui_enabled | default(false) }}"
+    forge_ui_port_cfg: "{{ forge_ui_port | default(18090) }}"
+    forge_ui_container_port_cfg: "{{ forge_ui_container_port | default(8080) }}"
+    forge_ui_image_cfg: "{{ forge_ui_image | default(\"\") }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
-    # Encode the complete patch before it crosses the two nested shell parsers
+    # Encode the complete patch before it crosses the saw-integ nested shell parsers
     # (host bash -> sandbox /bin/sh). This preserves JSON arrays exactly.
     openclaw_trusted_proxy_patch_b64: >-
       {{
@@ -61,38 +66,55 @@
           }
         } | to_json | b64encode
       }}
-    # Preserve the proven OpenAI Responses metadata for the approved model.
+    # Preserve the live-good OpenAI-compatible completions metadata for the
+    # approved model. The gateway reaches the integration VM through
+    # OpenShell's in-sandbox inference route; using the Responses shape here
+    # caused OpenClaw to reject UI requests as schema/tool payload failures.
     openclaw_known_openai_model_catalog:
       gpt-5.6-sol:
-        id: gpt-5.6-sol
-        name: GPT-5.6 Sol
-        api: openai-responses
-        reasoning: true
+        id: "{{ inference_model_cfg }}"
+        name: "{{ inference_model_cfg }} (Custom Provider)"
+        api: openai-completions
+        reasoning: false
         input: [text, image]
-        contextWindow: 1050000
-        contextTokens: 272000
-        maxTokens: 128000
+        contextWindow: 128000
+        maxTokens: 4096
         cost:
-          input: 5
-          output: 30
-          cacheRead: 0.5
-          cacheWrite: 6.25
-        thinkingLevelMap:
-          'off': none
-          xhigh: xhigh
-          max: max
-        compat:
-          supportsReasoningEffort: true
-          supportedReasoningEfforts: [none, low, medium, high, xhigh, max]
-          supportsTemperature: false
-          codeMode: preferred
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
+      rits/zai-org/glm-5-2-fp8:
+        id: "{{ inference_model_cfg }}"
+        name: GLM 5.2 FP8
+        api: openai-completions
+        reasoning: false
+        input: [text]
+        contextWindow: 128000
+        maxTokens: 4096
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
     openclaw_known_model_patch_b64: >-
       {{
         {
+          'agents': {
+            'defaults': {
+              'model': {
+                'primary': inference_provider_cfg ~ '/' ~ inference_model_cfg
+              },
+              'models': {
+                (inference_provider_cfg ~ '/' ~ inference_model_cfg): {}
+              }
+            }
+          },
           'models': {
             'providers': {
-              'openai': {
-                'api': 'openai-responses',
+              (inference_provider_cfg): {
+                'baseUrl': 'https://inference.local/v1',
+                'api': 'openai-completions',
                 'models': [
                   openclaw_known_openai_model_catalog.get(inference_model_cfg, {})
                 ]
@@ -105,29 +127,90 @@
   tasks:
     # Self-heal a flaky cloud-init dnf: reinstall (idempotent) with retries so a
     # single transient mirror/network hiccup doesn't break the whole run.
+    - name: Refresh and enable RHEL package repositories before package install
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if command -v subscription-manager >/dev/null 2>&1; then
+          subscription-manager refresh || true
+          subscription-manager repos \
+            --enable=rhel-9-for-x86_64-baseos-rpms \
+            --enable=rhel-9-for-x86_64-appstream-rpms || true
+        fi
+        dnf clean all
+      args:
+        executable: /bin/bash
+      register: dnf_repo_bootstrap
+      changed_when: false
+      retries: 5
+      delay: 15
+      until: dnf_repo_bootstrap.rc == 0
+
+    - name: Refresh DNF metadata before package install
+      ansible.builtin.command:
+        cmd: dnf makecache --refresh
+      register: dnf_makecache
+      changed_when: false
+      retries: 5
+      delay: 15
+      until: dnf_makecache.rc == 0
+
+    - name: Wait for required RHEL packages to become available
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dnf -q makecache --refresh
+        for pkg in \
+          ansible-core podman fuse-overlayfs slirp4netns \
+          curl jq qemu-guest-agent openssh-clients openssh-server \
+          binutils xfsprogs
+        do
+          dnf -q list "${pkg}" >/dev/null
+        done
+      args:
+        executable: /bin/bash
+      register: dnf_package_availability
+      changed_when: false
+      retries: 30
+      delay: 20
+      until: dnf_package_availability.rc == 0
+
     - name: Ensure required packages are installed
       ansible.builtin.dnf:
         name:
-          - telnet
-          - git
           - ansible-core
           - podman
           - fuse-overlayfs
           - slirp4netns
           - curl
           - jq
-          - lsof
           - qemu-guest-agent
           - openssh-clients
           - openssh-server
           - binutils
-          - nodejs
           - xfsprogs
+        enablerepo:
+          - rhel-9-for-x86_64-baseos-rpms
+          - rhel-9-for-x86_64-appstream-rpms
+        update_cache: true
         state: present
       register: pkg_install
-      retries: 5
-      delay: 15
+      retries: 10
+      delay: 20
       until: pkg_install is succeeded
+
+    - name: Install optional troubleshooting packages when available
+      ansible.builtin.dnf:
+        name:
+          - telnet
+          - git
+          - lsof
+          - nodejs
+        enablerepo:
+          - rhel-9-for-x86_64-baseos-rpms
+          - rhel-9-for-x86_64-appstream-rpms
+        skip_broken: true
+        state: present
+      register: optional_pkg_install
+      failed_when: false
 
     - name: Resolve target user account
       ansible.builtin.getent:
@@ -149,136 +232,136 @@
           # PATH so bare `openshell` resolves for all become_user tasks.
           PATH: "{{ user_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-    - name: Define VM one persistent disks
+    - name: Define saw-agent persistent disks
       ansible.builtin.set_fact:
-        one_persistent_disks:
-          - serial: ONESTATE
-            mount: /var/lib/saw-one-state
-          - serial: ONEASSETS
-            mount: /var/lib/saw-one-assets
+        saw_agent_persistent_disks:
+          - serial: SAWAGENTSTATE
+            mount: /var/lib/saw-agent-state
+          - serial: SAWAGENTASSETS
+            mount: /var/lib/saw-agent-assets
 
-    - name: Define VM one persistent bind mounts
+    - name: Define saw-agent persistent bind mounts
       ansible.builtin.set_fact:
-        one_state_bind_mounts:
-          - source: /var/lib/saw-one-state/etc-openshell
+        saw_agent_state_bind_mounts:
+          - source: /var/lib/saw-agent-state/etc-openshell
             target: /etc/openshell
             owner: root
             group: root
-          - source: /var/lib/saw-one-state/home-config-openshell
+          - source: /var/lib/saw-agent-state/home-config-openshell
             target: "{{ user_home }}/.config/openshell"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
-          - source: /var/lib/saw-one-state/home-local-state-openshell
+          - source: /var/lib/saw-agent-state/home-local-state-openshell
             target: "{{ user_home }}/.local/state/openshell"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
-          - source: /var/lib/saw-one-state/home-local-share-openshell
+          - source: /var/lib/saw-agent-state/home-local-share-openshell
             target: "{{ user_home }}/.local/share/openshell"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
-        one_asset_bind_mounts:
-          - source: /var/lib/saw-one-assets/home-local-share-containers
+        saw_agent_asset_bind_mounts:
+          - source: /var/lib/saw-agent-assets/home-local-share-containers
             target: "{{ user_home }}/.local/share/containers"
             owner: "{{ user_name }}"
             group: "{{ user_name }}"
 
-    - name: Combine VM one persistent bind mounts
+    - name: Combine saw-agent persistent bind mounts
       ansible.builtin.set_fact:
-        one_persistent_bind_mounts: "{{ one_state_bind_mounts + one_asset_bind_mounts }}"
+        saw_agent_persistent_bind_mounts: "{{ saw_agent_state_bind_mounts + saw_agent_asset_bind_mounts }}"
 
-    - name: Locate VM one persistent disks
+    - name: Locate saw-agent persistent disks
       ansible.builtin.shell: |
         set -euo pipefail
         lsblk -rpno NAME,SERIAL | awk '$2=="{{ item.serial }}"{print $1;exit}'
       args:
         executable: /bin/bash
-      loop: "{{ one_persistent_disks }}"
-      register: one_persistent_device_lookup
+      loop: "{{ saw_agent_persistent_disks }}"
+      register: saw_agent_persistent_device_lookup
       changed_when: false
       retries: 12
       delay: 5
-      until: one_persistent_device_lookup.stdout | length > 0
+      until: saw_agent_persistent_device_lookup.stdout | length > 0
 
-    - name: Build VM one persistent disk facts
+    - name: Build saw-agent persistent disk facts
       ansible.builtin.set_fact:
-        one_persistent_devices: "{{ one_persistent_devices | default([]) + [item.item | combine({'device': item.stdout})] }}"
-      loop: "{{ one_persistent_device_lookup.results }}"
+        saw_agent_persistent_devices: "{{ saw_agent_persistent_devices | default([]) + [item.item | combine({'device': item.stdout})] }}"
+      loop: "{{ saw_agent_persistent_device_lookup.results }}"
 
-    - name: Check VM one persistent disk filesystems
+    - name: Check saw-agent persistent disk filesystems
       ansible.builtin.command: "blkid {{ item.device }}"
-      loop: "{{ one_persistent_devices }}"
-      register: one_persistent_blkid
+      loop: "{{ saw_agent_persistent_devices }}"
+      register: saw_agent_persistent_blkid
       changed_when: false
       failed_when: false
 
-    - name: Format blank VM one persistent disks
+    - name: Format blank saw-agent persistent disks
       ansible.builtin.command: "mkfs.xfs -f {{ item.item.device }}"
-      loop: "{{ one_persistent_blkid.results }}"
+      loop: "{{ saw_agent_persistent_blkid.results }}"
       when: item.rc != 0
       changed_when: true
 
-    - name: Read VM one persistent disk UUIDs
+    - name: Read saw-agent persistent disk UUIDs
       ansible.builtin.command: "blkid -s UUID -o value {{ item.device }}"
-      loop: "{{ one_persistent_devices }}"
-      register: one_persistent_uuid_lookup
+      loop: "{{ saw_agent_persistent_devices }}"
+      register: saw_agent_persistent_uuid_lookup
       changed_when: false
 
-    - name: Ensure VM one persistent mount points exist
+    - name: Ensure saw-agent persistent mount points exist
       ansible.builtin.file:
         path: "{{ item.mount }}"
         state: directory
         mode: "0750"
-      loop: "{{ one_persistent_devices }}"
+      loop: "{{ saw_agent_persistent_devices }}"
 
-    - name: Persist VM one disk mounts
+    - name: Persist saw-agent disk mounts
       ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: "^[^#]\\S+\\s+{{ item.item.mount | regex_escape() }}\\s+"
         line: "UUID={{ item.stdout }} {{ item.item.mount }} xfs defaults,nofail 0 2"
         create: true
         mode: "0644"
-      loop: "{{ one_persistent_uuid_lookup.results }}"
+      loop: "{{ saw_agent_persistent_uuid_lookup.results }}"
 
-    - name: Mount VM one persistent disks
+    - name: Mount saw-agent persistent disks
       ansible.builtin.command: "mount {{ item.mount }}"
-      loop: "{{ one_persistent_devices }}"
-      register: one_persistent_mount
-      changed_when: one_persistent_mount.rc == 0
-      failed_when: one_persistent_mount.rc != 0 and 'already mounted' not in one_persistent_mount.stderr
+      loop: "{{ saw_agent_persistent_devices }}"
+      register: saw_agent_persistent_mount
+      changed_when: saw_agent_persistent_mount.rc == 0
+      failed_when: saw_agent_persistent_mount.rc != 0 and 'already mounted' not in saw_agent_persistent_mount.stderr
 
-    - name: Ensure VM one persistent bind sources exist
+    - name: Ensure saw-agent persistent bind sources exist
       ansible.builtin.file:
         path: "{{ item.source }}"
         state: directory
         owner: "{{ item.owner }}"
         group: "{{ item.group }}"
         mode: "0750"
-      loop: "{{ one_persistent_bind_mounts }}"
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
 
-    - name: Ensure VM one persistent bind targets exist
+    - name: Ensure saw-agent persistent bind targets exist
       ansible.builtin.file:
         path: "{{ item.target }}"
         state: directory
         owner: "{{ item.owner }}"
         group: "{{ item.group }}"
         mode: "0750"
-      loop: "{{ one_persistent_bind_mounts }}"
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
 
-    - name: Persist VM one bind mounts
+    - name: Persist saw-agent bind mounts
       ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: "^[^#]\\S+\\s+{{ item.target | regex_escape() }}\\s+"
         line: "{{ item.source }} {{ item.target }} none bind,nofail 0 0"
         create: true
         mode: "0644"
-      loop: "{{ one_persistent_bind_mounts }}"
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
 
-    - name: Mount VM one bind targets
+    - name: Mount saw-agent bind targets
       ansible.builtin.command: "mount {{ item.target }}"
-      loop: "{{ one_persistent_bind_mounts }}"
-      register: one_persistent_bind_mount
-      changed_when: one_persistent_bind_mount.rc == 0
-      failed_when: one_persistent_bind_mount.rc != 0 and 'already mounted' not in one_persistent_bind_mount.stderr
+      loop: "{{ saw_agent_persistent_bind_mounts }}"
+      register: saw_agent_persistent_bind_mount
+      changed_when: saw_agent_persistent_bind_mount.rc == 0
+      failed_when: saw_agent_persistent_bind_mount.rc != 0 and 'already mounted' not in saw_agent_persistent_bind_mount.stderr
 
     - name: Ensure persistent OpenClaw home exists
       ansible.builtin.file:
@@ -366,6 +449,87 @@
       become_user: "{{ user_name }}"
       environment: "{{ user_env }}"
       changed_when: true
+
+    - name: Validate Forge UI image when preview is enabled
+      ansible.builtin.assert:
+        that:
+          - forge_ui_image_cfg | length > 0
+        fail_msg: "forge_ui_image must be set when forge_ui_enabled is true"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Ensure user Forge UI runtime dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+      loop:
+        - "{{ user_home }}/.config/systemd/user"
+        - "{{ user_home }}/.local/bin"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Write Forge UI launch script
+      ansible.builtin.copy:
+        dest: "{{ user_home }}/.local/bin/start-forge-ui"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          podman pull "{{ forge_ui_image_cfg }}"
+          podman rm -f forge-ui >/dev/null 2>&1 || true
+
+          exec podman run --rm --name forge-ui \
+            -p 0.0.0.0:{{ forge_ui_port_cfg }}:{{ forge_ui_container_port_cfg }} \
+            "{{ forge_ui_image_cfg }}"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Write Forge UI systemd user unit
+      ansible.builtin.copy:
+        dest: "{{ user_home }}/.config/systemd/user/forge-ui.service"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Forge UI static preview
+          After=podman.socket
+          Wants=podman.socket
+
+          [Service]
+          Type=simple
+          ExecStart=%h/.local/bin/start-forge-ui
+          ExecStop=/usr/bin/podman stop -t 5 forge-ui
+          Restart=on-failure
+          RestartSec=5s
+
+          [Install]
+          WantedBy=default.target
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Enable + start Forge UI preview
+      ansible.builtin.systemd:
+        name: forge-ui.service
+        scope: user
+        enabled: true
+        state: started
+        daemon_reload: true
+      become_user: "{{ user_name }}"
+      environment: "{{ user_env }}"
+      when: forge_ui_enabled_cfg | bool
+
+    - name: Wait for Forge UI readiness
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/"
+        status_code: [200]
+      register: forge_ui_health
+      until: forge_ui_health.status == 200
+      retries: 20
+      delay: 3
+      when: forge_ui_enabled_cfg | bool
 
     # === [2/8] Gateway config files (env, toml, systemd unit) ===
     - name: Ensure /etc/openshell exists
@@ -797,7 +961,7 @@
           failed_when: false
 
         # OpenShell replaces the OCI entrypoint with its supervisor and treats the
-        # command passed to `sandbox create` as a one-shot exec. Create a durable
+        # command passed to `sandbox create` as a saw-agent-shot exec. Create a durable
         # Ready sandbox first; a dependent unit starts OpenClaw through sandbox
         # exec on every VM boot. This follows secure-agent-workspace PR #34.
         - name: Write OpenClaw sandbox ensure script
@@ -920,13 +1084,13 @@
                     --mode local \
                     --auth-choice custom-api-key \
                     --custom-base-url "https://inference.local/v1" \
-                    --custom-provider-id "{{ provider_sel.type }}" \
+                    --custom-provider-id "{{ inference_provider_cfg }}" \
                     --custom-model-id "{{ inference_model_cfg }}" \
                     --custom-compatibility openai \
                     --skip-channels \
                     --skip-health
 
-                  if [ "{{ provider_sel.type }}" = "openai" ] && [ "{{ inference_model_cfg }}" = "gpt-5.6-sol" ]; then
+                  if [ "{{ provider_sel.type }}" = "openai" ]; then
                     printf %s "{{ openclaw_known_model_patch_b64 }}" \
                       | base64 -d >/tmp/openclaw-known-model.json
                     openclaw config patch \

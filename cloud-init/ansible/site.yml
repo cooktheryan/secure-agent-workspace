@@ -1,5 +1,5 @@
 ---
-- name: Two-VM Secure Agent Workspace role dispatcher
+- name: Dual-VM Secure Agent Workspace role dispatcher
   hosts: localhost
   connection: local
   become: true
@@ -62,13 +62,13 @@
             -e @/etc/openshell-saw/vars.yml
           changed_when: true
 
-    - name: Configure integration inference proxy on VM two
+    - name: Configure integration inference proxy on saw-integ
       when: saw_vm_role_required == 'integration'
       block:
         - name: Locate persistent integration disk
           ansible.builtin.shell: |
             set -euo pipefail
-            lsblk -rpno NAME,SERIAL | awk '$2=="TWOPERSIST"{print $1;exit}'
+            lsblk -rpno NAME,SERIAL | awk '$2=="SAWINTEGPERSIST"{print $1;exit}'
           args:
             executable: /bin/bash
           register: saw_persist_device
