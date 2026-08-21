@@ -39,72 +39,7 @@ spec:
             https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/openclaw-saw-demo-clean.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
           usermod --add-subuids 100000-165535 --add-subgids 100000-165535 openshell 2>/dev/null || true
-          cat >/usr/local/sbin/saw-provision-debug-server <<'PY'
-          #!/usr/bin/env python3
-          import html
-          import re
-          import subprocess
-          from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-          LOG_PATH = "/var/log/saw-provision.log"
-
-          def command_output(args):
-              try:
-                  return subprocess.run(
-                      args,
-                      check=False,
-                      text=True,
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.STDOUT,
-                      timeout=20,
-                  ).stdout
-              except Exception as exc:
-                  return f"{type(exc).__name__}: {exc}\n"
-
-          def redact(text):
-              text = re.sub(
-                  r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
-                  "<redacted private key>",
-                  text,
-                  flags=re.S,
-              )
-              text = re.sub(r"sk-[A-Za-z0-9_-]+", "sk-<redacted>", text)
-              text = re.sub(
-                  r"(?im)^([A-Za-z0-9_.-]*(?:api[_-]?key|token|password|secret)[A-Za-z0-9_.-]*\\s*[:=]\\s*).*$",
-                  r"\\1<redacted>",
-                  text,
-              )
-              return text
-
-          def tail_log():
-              return command_output(["/usr/bin/tail", "-n", "420", LOG_PATH])
-
-          class Handler(BaseHTTPRequestHandler):
-              def do_GET(self):
-                  if self.path in ("/healthz", "/readyz"):
-                      body = "ok\n"
-                  elif self.path == "/status":
-                      body = command_output(["/usr/bin/systemctl", "status", "saw-provision.service", "--no-pager", "-l"])
-                  elif self.path == "/journal":
-                      body = command_output(["/usr/bin/journalctl", "-u", "saw-provision.service", "-n", "260", "--no-pager"])
-                  elif self.path == "/log":
-                      body = tail_log()
-                  else:
-                      body = "saw provision diagnostics\\n\\nGET /healthz\\nGET /status\\nGET /journal\\nGET /log\\n"
-                  body = redact(body)
-                  payload = html.escape(body).encode()
-                  self.send_response(200)
-                  self.send_header("Content-Type", "text/plain; charset=utf-8")
-                  self.send_header("Content-Length", str(len(payload)))
-                  self.end_headers()
-                  self.wfile.write(payload)
-
-              def log_message(self, fmt, *args):
-                  return
-
-          ThreadingHTTPServer(("0.0.0.0", 18080), Handler).serve_forever()
-          PY
-          chmod 0755 /usr/local/sbin/saw-provision-debug-server
+          install -m 0755 "${checkout}/cloud-init/files/saw-provision-debug-server.py" /usr/local/sbin/saw-provision-debug-server
           cat >/etc/systemd/system/saw-provision-log-http.service <<'UNIT'
           [Unit]
           Description=SAW provisioning diagnostic HTTP endpoint
