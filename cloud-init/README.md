@@ -262,14 +262,15 @@ an additional OpenClaw instance. A disconnected relay/gateway state in the page
 is expected until the relay integration is added later.
 
 The Forge UI image must be pullable by rootless Podman from inside saw-agent.
-The example vars default to the image produced by the upstream OpenShift build:
+The example vars default to the AMD64 image published for the VM-hosted preview:
 
 ```text
-image-registry.openshift-image-registry.svc:5000/<namespace>/rh-forge-ui:latest
+quay.io/rcook/rh-forge-ui:demo1-amd64
 ```
 
-If that internal image is not pullable from inside the VM, mirror it to a
-registry the VM can read or preload it onto the VM before enabling the service.
+If that image is private, configure rootless Podman auth for the `openshell`
+user before enabling the service, or temporarily make the repository public
+while validating the preview.
 
 Deploy the VM-hosted route after `Server/saw-agent` has been applied:
 

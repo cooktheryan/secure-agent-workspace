@@ -26,7 +26,7 @@ grep -Fq 'name: saw-agent' "$forge_route_manifest"
 grep -Fq 'forge_ui_enabled: true' "$agent_vars"
 grep -Fq 'forge_ui_port: 18090' "$agent_vars"
 grep -Fq 'forge_ui_container_port: 8080' "$agent_vars"
-grep -Fq 'forge_ui_image:' "$agent_vars"
+grep -Fq 'forge_ui_image: "quay.io/rcook/rh-forge-ui:demo1-amd64"' "$agent_vars"
 
 grep -Fq 'forge_ui_enabled_cfg: "{{ forge_ui_enabled | default(false) }}"' "$agent_playbook"
 grep -Fq 'forge_ui_port_cfg: "{{ forge_ui_port | default(18090) }}"' "$agent_playbook"
@@ -41,6 +41,7 @@ grep -Fq 'Wait for Forge UI readiness' "$agent_playbook"
 grep -Fq 'http://127.0.0.1:{{ forge_ui_port_cfg }}/' "$agent_playbook"
 
 grep -Fq 'kubernetes/agent-forge-ui-route.yml' "$readme"
+grep -Fq 'quay.io/rcook/rh-forge-ui:demo1-amd64' "$readme"
 grep -Fq 'saw-agent-forge-ui.<namespace>.dal.dev.cirrus.ibm.com' "$readme"
 grep -Fq 'VM-hosted Forge UI' "$tracker"
 
