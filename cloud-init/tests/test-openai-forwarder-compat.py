@@ -42,4 +42,30 @@ unchanged = json.loads(
 assert unchanged["max_tokens"] == 64
 assert "max_completion_tokens" not in unchanged
 
-print("OpenAI forwarder rewrites gpt-5 chat completions token limits")
+embedding_payload = {
+    "model": "gpt-5.6-sol",
+    "input": "hello",
+}
+
+rewritten_embedding = json.loads(
+    forwarder.rewrite_embeddings_body(
+        "/v1/embeddings",
+        json.dumps(embedding_payload).encode("utf-8"),
+        "application/json",
+    ).decode("utf-8")
+)
+
+assert rewritten_embedding["model"] == "text-embedding-3-small"
+assert rewritten_embedding["input"] == "hello"
+
+unchanged_embedding = json.loads(
+    forwarder.rewrite_embeddings_body(
+        "/v1/embeddings",
+        json.dumps({"model": "text-embedding-3-large", "input": "hello"}).encode("utf-8"),
+        "application/json",
+    ).decode("utf-8")
+)
+
+assert unchanged_embedding["model"] == "text-embedding-3-large"
+
+print("OpenAI forwarder rewrites gpt-5 chat token limits and embedding model requests")

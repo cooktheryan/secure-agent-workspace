@@ -9,6 +9,7 @@
     integration_proxy_port_cfg: "{{ integration_proxy_port | default(18083) }}"
     integration_proxy_upstream_url_cfg: "{{ integration_proxy_upstream_url | default('https://api.openai.com/v1') }}"
     integration_proxy_openai_key_cfg: "{{ integration_proxy_openai_key | default('') }}"
+    integration_proxy_embedding_model_cfg: "{{ integration_proxy_embedding_model | default('text-embedding-3-small') }}"
 
   tasks:
     - name: Validate VM role
@@ -213,6 +214,7 @@
               OPENAI_API_KEY_FILE=/etc/saw-integration/openai.key
               OPENAI_UPSTREAM_BASE_URL={{ integration_proxy_upstream_url_cfg }}
               INTEGRATION_PROXY_PORT={{ integration_proxy_port_cfg }}
+              INTEGRATION_PROXY_EMBEDDING_MODEL={{ integration_proxy_embedding_model_cfg }}
               INTEGRATION_PROXY_TLS_CERT=/etc/saw-integration/tls/server.crt
               INTEGRATION_PROXY_TLS_KEY=/etc/saw-integration/tls/server.key
           no_log: true

@@ -59,6 +59,7 @@ The following values are not secrets and may be documented in the PR:
 - OpenClaw route origin and callback URL.
 - OpenClaw allowed browser identities, for example `alice`.
 - The internal Service URL from `saw-agent` to `saw-integ`.
+- The integration proxy embeddings model, by default `text-embedding-3-small`.
 
 ## Reference names and how to change them
 
@@ -142,6 +143,8 @@ Edit `.secrets/saw-integ-vars.yml`:
 - set `integration_proxy_expected_bearer` to the same internal bearer used in
   `.secrets/saw-agent-vars.yml`;
 - set `integration_proxy_openai_key` to the provider API key;
+- leave `integration_proxy_embedding_model` as `text-embedding-3-small` unless
+  your provider requires a different embeddings-capable model;
 - set `integration_proxy_ca_pem`, `integration_proxy_tls_cert_pem`, and
   `integration_proxy_tls_key_pem` to the generated integration TLS material.
 

@@ -44,11 +44,17 @@ UPSTREAM_BASE = env("OPENAI_UPSTREAM_BASE_URL", "https://api.openai.com/v1").rst
 PORT = int(env("INTEGRATION_PROXY_PORT", "18083"))
 TLS_CERT = env("INTEGRATION_PROXY_TLS_CERT", "/etc/saw-integration/tls/server.crt")
 TLS_KEY = env("INTEGRATION_PROXY_TLS_KEY", "/etc/saw-integration/tls/server.key")
+EMBEDDING_MODEL = env("INTEGRATION_PROXY_EMBEDDING_MODEL", "text-embedding-3-small")
 
 
 def model_requires_max_completion_tokens(model):
     model_name = str(model or "")
     return model_name.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
+def model_cannot_generate_embeddings(model):
+    model_name = str(model or "")
+    return model_name.startswith(("gpt-", "o1", "o3", "o4"))
 
 
 def rewrite_chat_completions_body(path, body, content_type):
@@ -71,6 +77,26 @@ def rewrite_chat_completions_body(path, body, content_type):
     if "max_completion_tokens" not in payload:
         payload["max_completion_tokens"] = payload["max_tokens"]
     del payload["max_tokens"]
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+
+def rewrite_embeddings_body(path, body, content_type):
+    if body is None:
+        return None
+    if path != "/v1/embeddings":
+        return body
+    if "application/json" not in (content_type or "").lower():
+        return body
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return body
+    if not isinstance(payload, dict):
+        return body
+    if not model_cannot_generate_embeddings(payload.get("model")):
+        return body
+    if EMBEDDING_MODEL:
+        payload["model"] = EMBEDDING_MODEL
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 
@@ -159,6 +185,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
         body = rewrite_chat_completions_body(
             self.path,
             self.read_body(),
+            self.headers.get("content-type", ""),
+        )
+        body = rewrite_embeddings_body(
+            self.path,
+            body,
             self.headers.get("content-type", ""),
         )
         headers = {
