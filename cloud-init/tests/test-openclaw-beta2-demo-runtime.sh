@@ -62,6 +62,10 @@ grep -Fq 'OpenClaw demo gateway did not become healthy inside sandbox' <<<"$open
 gateway_unit_block="$(awk '/Write openclaw gateway systemd user unit/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
 grep -Fq 'Type=oneshot' <<<"$gateway_unit_block"
 grep -Fq 'RemainAfterExit=true' <<<"$gateway_unit_block"
+grep -Fq 'when: not (openclaw_demo_csb_enabled_cfg | bool)' "$agent_playbook"
+forward_unit_block="$(awk '/Write openclaw foreground forward systemd user unit/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
+grep -Fq 'Requires={% if openclaw_demo_csb_enabled_cfg | bool %}openclaw-sandbox.service{% else %}openclaw-gateway.service{% endif %}' <<<"$forward_unit_block"
+grep -Fq 'After={% if openclaw_demo_csb_enabled_cfg | bool %}openclaw-sandbox.service{% else %}openclaw-gateway.service{% endif %}' <<<"$forward_unit_block"
 sandbox_unit_block="$(awk '/Write openclaw sandbox systemd user unit/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
 if grep -Fq 'Type={% if' <<<"$sandbox_unit_block"; then
   echo "sandbox unit must not render Type and Environment on one line" >&2
@@ -76,6 +80,8 @@ fi
 grep -Fq 'disown "${create_pid}"' "$agent_playbook"
 grep -Fq 'create_openclaw_sandbox >/tmp/openclaw-sandbox-create.log 2>&1 </dev/null &' "$agent_playbook"
 grep -Fq 'OpenClaw sandbox create exited with rc=${create_rc}, but {{ sandbox_name }} is ${sandbox_state}; continuing' "$agent_playbook"
+grep -Fq 'openclaw_service_units_cfg' "$agent_playbook"
+grep -Fq "['openclaw-sandbox.service', 'openclaw-forward.service']" "$agent_playbook"
 if grep -Fq 'OpenClaw sandbox create did not report a sandbox before timeout' "$agent_playbook"; then
   echo "sandbox service must not block waiting for sandbox list while create owns the gateway foreground" >&2
   exit 1

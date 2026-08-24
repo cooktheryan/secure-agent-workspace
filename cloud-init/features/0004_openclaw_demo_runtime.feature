@@ -22,3 +22,11 @@ Feature: OpenClaw demo runtime provisioning
       When the OpenClaw sandbox is provisioned
       Then the sandbox service launches OpenShell sandbox creation in the background
       And gateway health is verified by the dependent gateway service
+
+  Rule: Where demo CSB mode is enabled, the agent provisioning shall avoid using sandbox exec as a required gateway health dependency.
+
+    Scenario: Demo forwarding starts from sandbox creation instead of sandbox exec
+      Given the agent VM is configured for OpenClaw demo CSB mode
+      When the OpenClaw sandbox service completes
+      Then the host forward service depends directly on the sandbox service
+      And the gateway service is not part of the demo startup chain

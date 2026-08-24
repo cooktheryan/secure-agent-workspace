@@ -19,6 +19,7 @@
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
     trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-agent-vm"
     openclaw_demo_csb_enabled_cfg: "{{ openclaw_demo_csb_enabled | default(false) }}"
+    openclaw_service_units_cfg: "{{ ['openclaw-sandbox.service', 'openclaw-forward.service'] if (openclaw_demo_csb_enabled | default(false) | bool) else ['openclaw-sandbox.service', 'openclaw-gateway.service', 'openclaw-forward.service'] }}"
     openclaw_sandbox_uid_cfg: "{{ openclaw_sandbox_uid | default('65532') }}"
     openclaw_sandbox_gid_cfg: "{{ openclaw_sandbox_gid | default(openclaw_sandbox_uid_cfg) }}"
     openclaw_demo_podman_volume: openclaw-saw-data
@@ -1205,6 +1206,7 @@
 
               [Install]
               WantedBy=default.target
+          when: not (openclaw_demo_csb_enabled_cfg | bool)
 
         - name: Write openclaw foreground forward systemd user unit
           ansible.builtin.copy:
@@ -1213,8 +1215,8 @@
             content: |
               [Unit]
               Description=OpenClaw host port forward
-              Requires=openclaw-gateway.service
-              After=openclaw-gateway.service
+              Requires={% if openclaw_demo_csb_enabled_cfg | bool %}openclaw-sandbox.service{% else %}openclaw-gateway.service{% endif %}
+              After={% if openclaw_demo_csb_enabled_cfg | bool %}openclaw-sandbox.service{% else %}openclaw-gateway.service{% endif %}
               PartOf=openclaw-sandbox.service
               StartLimitIntervalSec=0
 
@@ -1330,17 +1332,10 @@
                 daemon_reload: true
               register: openclaw_service_start
               failed_when: false
-              loop:
-                - openclaw-sandbox.service
-                - openclaw-gateway.service
-                - openclaw-forward.service
+              loop: "{{ openclaw_service_units_cfg }}"
 
             - name: Verify openclaw services are active
-              ansible.builtin.command: >-
-                systemctl --user is-active
-                openclaw-sandbox.service
-                openclaw-gateway.service
-                openclaw-forward.service
+              ansible.builtin.command: "systemctl --user is-active {{ openclaw_service_units_cfg | join(' ') }}"
               register: openclaw_services_active
               changed_when: false
               failed_when: openclaw_services_active.rc != 0
