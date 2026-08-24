@@ -17,7 +17,7 @@
     inference_https_proxy_cfg: "{{ inference_https_proxy | default('') }}"
     provider_sel: "{{ provider_map[inference_provider_cfg] | mandatory }}"
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
-    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-integ-vm"
+    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-agent-vm"
     gw_name: openshell
     mtls_gw: openshell-local
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
@@ -34,6 +34,8 @@
       {{
         {
           'gateway': {
+            'mode': 'local',
+            'bind': 'lan',
             'auth': {
               'mode': 'trusted-proxy',
               'trustedProxy': {
@@ -111,6 +113,7 @@
               (inference_provider_cfg): {
                 'baseUrl': 'https://inference.local/v1',
                 'api': 'openai-completions',
+                'apiKey': 'proxy-managed',
                 'models': [
                   openclaw_known_openai_model_catalog.get(inference_model_cfg, {})
                 ]
@@ -992,18 +995,6 @@
                   export TMPDIR=/sandbox/.openclaw/state
                   export OPENCLAW_NIX_MODE=0
                   mkdir -p /sandbox/.openclaw/state
-
-                  openclaw onboard \
-                    --non-interactive \
-                    --accept-risk \
-                    --mode local \
-                    --auth-choice custom-api-key \
-                    --custom-base-url "https://inference.local/v1" \
-                    --custom-provider-id "{{ inference_provider_cfg }}" \
-                    --custom-model-id "{{ inference_model_cfg }}" \
-                    --custom-compatibility openai \
-                    --skip-channels \
-                    --skip-health
 
                   if [ "{{ provider_sel.type }}" = "openai" ]; then
                     printf %s "{{ openclaw_known_model_patch_b64 }}" \

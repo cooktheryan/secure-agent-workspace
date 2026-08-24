@@ -12,16 +12,20 @@ readme="$repo_root/cloud-init/README.md"
 grep -Fq "glm:" "$agent_playbook"
 grep -Fq "type: openai" "$agent_playbook"
 grep -Fq "'providers': {" "$agent_playbook"
-grep -Fq "inference_provider_cfg: {" "$agent_playbook"
+grep -Fq "(inference_provider_cfg): {" "$agent_playbook"
 grep -Fq "'primary': inference_provider_cfg ~ '/' ~ inference_model_cfg" "$agent_playbook"
 grep -Fq "'api': 'openai-completions'" "$agent_playbook"
+grep -Fq "'apiKey': 'proxy-managed'" "$agent_playbook"
 grep -Fq "'baseUrl': 'https://inference.local/v1'" "$agent_playbook"
-grep -Fq "'rits/zai-org/glm-5-2-fp8':" "$agent_playbook"
+grep -Fq "rits/zai-org/glm-5-2-fp8:" "$agent_playbook"
 
-grep -Fq -- "--custom-provider-id \"{{ inference_provider_cfg }}\"" "$agent_playbook"
-grep -Fq -- "--custom-compatibility openai" "$agent_playbook"
+if grep -Fq "openclaw onboard" "$agent_playbook"; then
+  echo "agent playbook must not run OpenClaw onboarding during boot; direct runtime config replaces it" >&2
+  exit 1
+fi
 
-if grep -Fq "sk-iv7934" "$repo_root/cloud-init"; then
+if rg -n -e 'sk-[A-Za-z0-9_-]{12,}' "$repo_root/cloud-init" \
+  --glob '!tests/test-saw-agent-glm-runtime-config.sh'; then
   echo "GLM provider key must not be committed" >&2
   exit 1
 fi

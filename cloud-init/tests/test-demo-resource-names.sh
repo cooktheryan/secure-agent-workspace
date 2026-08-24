@@ -29,9 +29,9 @@ grep -Fq 'claimName: saw-agent-state-persist' "$agent_manifest"
 grep -Fq 'claimName: saw-agent-assets-persist' "$agent_manifest"
 
 grep -Fq 'kind: Route' "$agent_route_manifest"
-grep -Fq 'name: saw-agent-userport' "$agent_route_manifest"
+grep -Fq 'name: saw-agent-openclaw' "$agent_route_manifest"
 grep -Fq 'app.kubernetes.io/component: saw-agent' "$agent_route_manifest"
-grep -Fq 'host: saw-agent-userport.${NS}.dal.dev.cirrus.ibm.com' "$agent_route_manifest"
+grep -Fq 'host: saw-agent-openclaw.${NS}.dal.dev.cirrus.ibm.com' "$agent_route_manifest"
 grep -Fq 'name: saw-agent' "$agent_route_manifest"
 grep -Fq 'targetPort: userport' "$agent_route_manifest"
 

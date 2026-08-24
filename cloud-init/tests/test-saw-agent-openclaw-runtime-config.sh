@@ -11,10 +11,13 @@ agent_vars="$repo_root/cloud-init/ansible/vars/agent-vars.example.yml"
 # authenticated user identity via trusted-proxy headers.
 grep -Fq "'baseUrl': 'https://inference.local/v1'" "$agent_playbook"
 grep -Fq "'api': 'openai-completions'" "$agent_playbook"
+grep -Fq "'apiKey': 'proxy-managed'" "$agent_playbook"
 grep -Fq 'id: "{{ inference_model_cfg }}"' "$agent_playbook"
 grep -Fq "reasoning: false" "$agent_playbook"
 grep -Fq "openclaw config patch" "$agent_playbook"
 grep -Fq "openclaw config unset gateway.auth.token || true" "$agent_playbook"
+grep -Fq "'mode': 'local'" "$agent_playbook"
+grep -Fq "'bind': 'lan'" "$agent_playbook"
 grep -Fq "'mode': 'trusted-proxy'" "$agent_playbook"
 grep -Fq "'userHeader': 'x-forwarded-preferred-username'" "$agent_playbook"
 grep -Fq "'requiredHeaders': ['x-forwarded-proto', 'x-forwarded-host']" "$agent_playbook"
@@ -30,6 +33,11 @@ fi
 
 if grep -Fq "supportsTemperature" "$agent_playbook"; then
   echo "agent playbook still carries responses-style compatibility metadata" >&2
+  exit 1
+fi
+
+if grep -Fq "openclaw onboard" "$agent_playbook"; then
+  echo "agent playbook must write runtime config directly instead of running killed onboarding at boot" >&2
   exit 1
 fi
 

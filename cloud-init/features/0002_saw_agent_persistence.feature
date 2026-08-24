@@ -99,6 +99,13 @@ Feature: saw-agent persistent OpenClaw state
       Then OpenClaw uses the OpenAI completions provider through the sandbox inference route
       And OpenClaw trusts the authenticated route proxy for Alice
 
+  Rule: If OpenClaw onboarding is killed during boot, then the agent playbook shall write equivalent runtime configuration directly.
+
+    Scenario: Runtime config avoids the killed onboarding path
+      Given saw-agent is deployed for the OpenClaw SAW demo
+      When agent provisioning writes OpenClaw runtime configuration
+      Then OpenClaw receives the configured provider API key and gateway mode without running onboarding
+
   Rule: While OpenClaw user services are being started, the agent playbook shall verify actual service activity before failing provisioning.
 
     Scenario: Active OpenClaw services are accepted after noisy start output
