@@ -59,6 +59,25 @@ secrets: ## Generate local secrets for provisioning (inter-VM bearer, front-door
 	@chmod 600 "$(SECRETS_DIR)"/*
 	@echo "Secrets stored in $(SECRETS_DIR)/"
 
+secrets-k8s: check-ns secrets ## Generate secrets locally AND create K8s Secrets in namespace
+	@echo "Creating K8s Secrets in $(NS)..."
+	@BEARER=$$(cat "$(SECRETS_DIR)/inter-vm-bearer"); \
+	BEARER_SHA=$$(echo -n "$$BEARER" | sha256sum | cut -d ' ' -f 1); \
+	oc create secret generic inter-vm-bearer -n "$(NS)" \
+		--from-literal=bearer="$$BEARER" \
+		--from-literal=sha256="$$BEARER_SHA" \
+		--dry-run=client -o yaml | oc apply -f -
+	@oc create secret generic gmail-write-frontdoor -n "$(NS)" \
+		--from-file=bearer="$(SECRETS_DIR)/gmail-write-frontdoor" \
+		--dry-run=client -o yaml | oc apply -f -
+	@oc create secret generic m365-write-frontdoor -n "$(NS)" \
+		--from-file=bearer="$(SECRETS_DIR)/m365-write-frontdoor" \
+		--dry-run=client -o yaml | oc apply -f -
+	@oc create secret generic slack-write-frontdoor -n "$(NS)" \
+		--from-file=bearer="$(SECRETS_DIR)/slack-write-frontdoor" \
+		--dry-run=client -o yaml | oc apply -f -
+	@echo "K8s Secrets created in $(NS)"
+
 ##@ Create
 
 create-all: check-platform check-ns create-infrastructure create-integration create-agent ## Create all three VMs
