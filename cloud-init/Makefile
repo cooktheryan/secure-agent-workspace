@@ -13,9 +13,10 @@ SSH_PUBKEY           ?=
 SSH_PUBKEY_PATH      ?= ~/.ssh/id_ed25519.pub
 CONTAINER_DISK_IMAGE ?= registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest
 GOLDEN_IMAGE_PVC     ?= openshell-gateway-podman-golden
+BASE_IMAGE_URL       ?= https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2
 ANSIBLE_DIR          := ansible
 
-export NS PLATFORM BRANCH SSH_PUBKEY SSH_PUBKEY_PATH CONTAINER_DISK_IMAGE GOLDEN_IMAGE_PVC
+export NS PLATFORM BRANCH SSH_PUBKEY SSH_PUBKEY_PATH CONTAINER_DISK_IMAGE GOLDEN_IMAGE_PVC BASE_IMAGE_URL
 
 .PHONY: help create-all delete-all verify status
 
@@ -32,7 +33,8 @@ help: ## Show this help
 		"SSH_PUBKEY" "SSH public key string (overrides file)" "$(if $(SSH_PUBKEY),set,unset)" \
 		"SSH_PUBKEY_PATH" "Path to SSH public key file" "$(SSH_PUBKEY_PATH)" \
 		"CONTAINER_DISK_IMAGE" "Base VM image (cirrus)" "$(CONTAINER_DISK_IMAGE)" \
-		"GOLDEN_IMAGE_PVC" "Golden image PVC (openshift-cnv)" "$(GOLDEN_IMAGE_PVC)"
+		"GOLDEN_IMAGE_PVC" "Golden image PVC (openshift-cnv)" "$(GOLDEN_IMAGE_PVC)" \
+		"BASE_IMAGE_URL" "Fedora Cloud qcow2 URL (openshift-cnv)" "$(BASE_IMAGE_URL)"
 	@echo ""
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+[a-zA-Z0-9_-]*:.*## .*$$' $(MAKEFILE_LIST) | sort | \

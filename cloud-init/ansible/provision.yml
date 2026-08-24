@@ -20,6 +20,7 @@
     ssh_pubkey: "{{ lookup('env', 'SSH_PUBKEY') | default(lookup('file', ssh_pubkey_path, errors='ignore') | default('', true), true) }}"
     container_disk_image: "{{ lookup('env', 'CONTAINER_DISK_IMAGE') | default('registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest', true) }}"
     golden_image_pvc: "{{ lookup('env', 'GOLDEN_IMAGE_PVC') | default('openshell-gateway-podman-golden', true) }}"
+    base_image_url: "{{ lookup('env', 'BASE_IMAGE_URL') | default('https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2', true) }}"
     secrets_dir: "{{ playbook_dir }}/../.secrets"
     kube_dir: "{{ playbook_dir }}/../kubernetes/{{ platform }}"
     action: "create"
@@ -161,6 +162,7 @@
             -e "s|\${CONTAINER_DISK_IMAGE}|{{ container_disk_image }}|g" \
             -e "s|\${SSH_PUBKEY}|{{ ssh_pubkey }}|g" \
             -e "s|\${GOLDEN_IMAGE_PVC}|{{ golden_image_pvc }}|g" \
+            -e "s|\${BASE_IMAGE_URL}|{{ base_image_url }}|g" \
           "{{ item }}" | oc apply -n "{{ ns }}" -f -
       loop: "{{ vm_files }}"
       changed_when: true
