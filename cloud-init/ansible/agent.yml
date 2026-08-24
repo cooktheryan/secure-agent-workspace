@@ -1008,12 +1008,12 @@
                     --file /tmp/openclaw-trusted-proxy.json
                   openclaw config validate --json
 
-                  nohup openclaw gateway run \
+                  exec openclaw gateway run \
                     --allow-unconfigured \
                     --bind lan \
                     --port {{ openclaw_forward_port_cfg }} \
-                    >/tmp/openclaw-gateway.log 2>&1 </dev/null &
-                ' </dev/null
+                    >>/tmp/openclaw-gateway.log 2>&1
+                '
 
         - name: Write openclaw gateway systemd user unit
           ansible.builtin.copy:
@@ -1027,9 +1027,10 @@
               PartOf=openclaw-sandbox.service
 
               [Service]
-              Type=oneshot
+              Type=simple
               ExecStart=%h/.local/bin/start-openclaw-gateway
-              RemainAfterExit=true
+              Restart=on-failure
+              RestartSec=5s
 
               [Install]
               WantedBy=default.target

@@ -52,6 +52,23 @@ if grep -Fq "openclaw onboard" "$agent_playbook"; then
   exit 1
 fi
 
+gateway_launcher="$(awk '/dest: "{{ user_home }}\/\.local\/bin\/start-openclaw-gateway"/{in_launcher=1} in_launcher{print} in_launcher && /dest: "{{ user_home }}\/\.config\/systemd\/user\/openclaw-gateway.service"/{exit}' "$agent_playbook")"
+if grep -Fq "nohup openclaw gateway run" <<<"$gateway_launcher"; then
+  echo "OpenClaw gateway must run in the foreground so systemd tracks the real process" >&2
+  exit 1
+fi
+if grep -Fq ">/tmp/openclaw-gateway.log 2>&1 </dev/null &" <<<"$gateway_launcher"; then
+  echo "OpenClaw gateway launcher must not background the gateway before health checks" >&2
+  exit 1
+fi
+
+gateway_unit="$(awk '/Description=OpenClaw gateway process inside OpenShell sandbox/{in_unit=1} in_unit{print} in_unit && /WantedBy=default.target/{exit}' "$agent_playbook")"
+grep -Fq "Type=simple" <<<"$gateway_unit"
+if grep -Fq "RemainAfterExit=true" <<<"$gateway_unit"; then
+  echo "OpenClaw gateway unit must not remain active after the launcher exits" >&2
+  exit 1
+fi
+
 if awk '
   /openshell sandbox create/ { in_create=1 }
   in_create && /--provider {{ inference_provider_name }}/ { found=1 }
