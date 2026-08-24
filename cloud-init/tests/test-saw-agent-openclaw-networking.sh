@@ -45,5 +45,11 @@ grep -Fq 'Start openclaw services' "$agent_playbook"
 grep -Fq 'failed_when: false' "$agent_playbook"
 grep -Fq 'Verify openclaw services are active' "$agent_playbook"
 grep -Fq 'systemctl --user is-active' "$agent_playbook"
+grep -Fq 'openclaw_forward_port_cfg }}{% if openclaw_demo_csb_enabled_cfg | bool %}/ready' "$agent_playbook"
+
+if grep -Fq 'openclaw_forward_port_cfg }}{% if openclaw_demo_csb_enabled_cfg | bool %}/healthz' "$agent_playbook"; then
+  echo "demo OpenClaw readiness must use /ready, not the legacy /healthz path" >&2
+  exit 1
+fi
 
 echo "saw-agent OpenClaw listener split is configured"

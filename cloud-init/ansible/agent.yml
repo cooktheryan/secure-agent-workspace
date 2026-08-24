@@ -1701,7 +1701,7 @@
             - name: Wait for openclaw gateway health through raw localhost forward
               ansible.builtin.uri:
                 url: >-
-                  http://127.0.0.1:{{ openclaw_forward_port_cfg }}{% if openclaw_demo_csb_enabled_cfg | bool %}/healthz{% else %}/health{% endif %}
+                  http://127.0.0.1:{{ openclaw_forward_port_cfg }}{% if openclaw_demo_csb_enabled_cfg | bool %}/ready{% else %}/health{% endif %}
                 status_code: [200]
                 return_content: true
               register: openclaw_health

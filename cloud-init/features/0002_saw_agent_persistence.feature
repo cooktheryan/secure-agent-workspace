@@ -87,6 +87,11 @@ Feature: saw-agent persistent OpenClaw state
       Then oauth2-proxy accepts userport traffic on every guest interface
       And the raw OpenClaw forward remains available only on localhost
 
+    Scenario: Demo gateway readiness uses the OpenClaw ready endpoint
+      Given saw-agent uses the OpenClaw SAW demo runtime
+      When agent provisioning verifies the raw OpenClaw forward
+      Then provisioning checks the OpenClaw ready endpoint through the raw forward
+
   Rule: If the base image does not provide optional Python packaging tools, then the role dispatcher shall avoid installing them on saw-agent.
 
     Scenario: saw-agent provisioning does not require python3-pip
