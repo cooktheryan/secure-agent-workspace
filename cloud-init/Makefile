@@ -51,10 +51,10 @@ help: ## Show this help
 
 ##@ Secrets
 
-secrets: ## Generate local secrets (.secrets/)
+secrets: ## Generate local secrets: inter-vm-bearer, gmail/m365/slack-write-frontdoor (.secrets/)
 	@bash $(SCRIPTS)/generate-secrets.sh
 
-secrets-k8s: secrets ## Generate + push to K8s Secrets
+secrets-k8s: secrets ## Push secrets to K8s: inter-vm-bearer, gmail/m365/slack-write-frontdoor
 	@bash $(SCRIPTS)/push-secrets-k8s.sh
 
 ##@ Create
