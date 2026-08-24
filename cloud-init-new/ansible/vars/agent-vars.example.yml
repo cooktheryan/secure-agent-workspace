@@ -1,0 +1,28 @@
+---
+# Agent VM variables — copy to cloud-init/.secrets/agent-vars.yml and fill in.
+# Never commit the filled-in version.
+
+saw_role: agent
+saw_owner: alice
+
+openshell_version: "0.0.110"
+openclaw_image: "quay.io/redhat-et/openclaw-saw:demo1"
+gog_version: "0.36.0"
+
+# Inter-VM bearer (shared with integ VM, 64 hex chars)
+# Generate: openssl rand -hex 32
+inference_api_key: ""
+
+# Integrations VM endpoint (IP or hostname)
+integ_host: ""
+integ_inference_port: 18083
+integ_gmail_read_port: 18080
+
+# OIDC (optional — for browser-based login)
+oidc_issuer_url: ""
+oidc_client_id: "openshell-cli"
+
+# OpenClaw route (if exposing via reverse proxy)
+openclaw_route_origin: ""
+openclaw_proxy_redirect_url: ""
+openclaw_proxy_allowed_users: "alice"

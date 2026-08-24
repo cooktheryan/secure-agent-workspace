@@ -1,0 +1,24 @@
+---
+# Main playbook — dispatches to agent or integrations based on role variable.
+#
+# Usage:
+#   ansible-playbook site.yml -i inventory.ini -e role=agent
+#   ansible-playbook site.yml -i inventory.ini -e role=integrations
+#   ansible-playbook site.yml -i inventory.ini  # runs both
+
+- name: Provision SAW VMs
+  hosts: all
+  become: true
+  vars:
+    role: "{{ saw_role | default('all') }}"
+    owner: "{{ saw_owner | default('alice') }}"
+    openshell_version: "0.0.110"
+
+  tasks:
+    - name: Include agent playbook
+      ansible.builtin.include_tasks: agent.yml
+      when: role in ['agent', 'all']
+
+    - name: Include integrations playbook
+      ansible.builtin.include_tasks: integ.yml
+      when: role in ['integrations', 'all']

@@ -1,0 +1,83 @@
+---
+# Agent VM provisioning tasks.
+# Installs OpenShell, OpenClaw sandbox image, gog CLI, and configures
+# the gateway with mTLS + OIDC support.
+
+- name: Install system dependencies
+  ansible.builtin.dnf:
+    name:
+      - podman
+      - jq
+      - curl
+      - openssl
+      - iproute
+      - nftables
+      - util-linux
+      - openssh-clients
+      - lsof
+      - python3
+    state: present
+    install_weak_deps: false
+
+- name: Enable podman socket for cloud-user
+  ansible.builtin.systemd:
+    name: podman.socket
+    scope: user
+    state: started
+    enabled: true
+  become_user: cloud-user
+
+- name: Create persistent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: cloud-user
+    group: cloud-user
+    mode: "0700"
+  loop:
+    - /home/cloud-user/.local/bin
+    - /home/cloud-user/.config/systemd/user
+    - /home/cloud-user/.config/secure-agent-workspace
+    - /home/cloud-user/.config/openshell
+
+- name: Install OpenShell binaries
+  ansible.builtin.shell: |
+    curl -fsSL "https://github.com/NVIDIA/OpenShell/releases/download/v{{ openshell_version }}/openshell-linux-amd64.tar.gz" \
+      | tar -xz -C /usr/local/bin
+    openshell --version
+  args:
+    creates: /usr/local/bin/openshell
+
+- name: Pre-pull OpenClaw sandbox image
+  ansible.builtin.shell: |
+    podman pull {{ openclaw_image | default('quay.io/redhat-et/openclaw-saw:demo1') }}
+  become_user: cloud-user
+
+- name: Install gog CLI
+  ansible.builtin.shell: |
+    arch=$(uname -m)
+    case "$arch" in
+      x86_64) asset="gogcli_{{ gog_version | default('0.36.0') }}_linux_amd64.tar.gz" ;;
+      aarch64) asset="gogcli_{{ gog_version | default('0.36.0') }}_linux_arm64.tar.gz" ;;
+    esac
+    curl -fsSL -o /tmp/gog.tar.gz \
+      "https://github.com/openclaw/gogcli/releases/download/v{{ gog_version | default('0.36.0') }}/${asset}"
+    tar -xzf /tmp/gog.tar.gz -C /usr/local/bin gog
+    chmod 755 /usr/local/bin/gog
+    rm -f /tmp/gog.tar.gz
+  args:
+    creates: /usr/local/bin/gog
+
+- name: Enable loginctl linger for cloud-user
+  ansible.builtin.shell: loginctl enable-linger cloud-user
+  changed_when: false
+
+- name: Record agent manifest
+  ansible.builtin.copy:
+    dest: /etc/saw-agent-manifest.env
+    content: |
+      OPENSHELL_VERSION={{ openshell_version }}
+      OPENCLAW_IMAGE={{ openclaw_image | default('quay.io/redhat-et/openclaw-saw:demo1') }}
+      GOG_VERSION={{ gog_version | default('0.36.0') }}
+      ROLE=agent
+      OWNER={{ owner }}
