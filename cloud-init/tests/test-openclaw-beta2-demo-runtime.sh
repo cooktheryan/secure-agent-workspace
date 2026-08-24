@@ -42,10 +42,13 @@ if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook";
   echo "beta2 startup must not gate on openclaw --version because this image can exit 137 before gateway launch" >&2
   exit 1
 fi
+grep -Fq 'sandbox_state_after_delete=' "$agent_playbook"
+grep -Fq 'OpenClaw sandbox remained in ${sandbox_state_after_delete} after delete; refusing to recreate yet' "$agent_playbook"
 grep -Fq 'exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1' "$agent_playbook"
 grep -Fq 'node -e "const net = require(\"node:net\")' "$agent_playbook"
 grep -Fq 'net.connect(18789, \"127.0.0.1\")' "$agent_playbook"
 grep -Fq 'server.listen({ host: \"127.0.0.1\", port: {{ openclaw_forward_port_cfg }} });"' "$agent_playbook"
+grep -Fq '[ "${sandbox_state}" = "Ready" ]' "$agent_playbook"
 grep -Fq "curl -fsS http://127.0.0.1:18789/healthz" "$agent_playbook"
 grep -Fq 'OpenClaw sandbox is Ready but the demo gateway is unhealthy; replacing it' "$agent_playbook"
 openclaw_runtime_block="$(awk '/Write reference-aligned OpenClaw launch script/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"

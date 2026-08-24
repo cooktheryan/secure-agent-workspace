@@ -989,10 +989,27 @@
                   /usr/bin/sleep 3
                 done
 
-                /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
-                  | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
-                  | /usr/bin/xargs -r /usr/bin/podman rm -f || true
-              fi
+                        /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
+                          | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
+                          | /usr/bin/xargs -r /usr/bin/podman rm -f || true
+
+                        sandbox_state_after_delete=""
+                        for attempt in $(/usr/bin/seq 1 60); do
+                          sandbox_state_after_delete="$(
+                            /usr/local/bin/openshell sandbox list \
+                              | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+                          )"
+                          if [ -z "${sandbox_state_after_delete}" ]; then
+                            break
+                          fi
+                          /usr/bin/sleep 2
+                        done
+
+                        if [ -n "${sandbox_state_after_delete}" ]; then
+                          echo "OpenClaw sandbox remained in ${sandbox_state_after_delete} after delete; refusing to recreate yet" >&2
+                          exit 1
+                        fi
+                      fi
 
               for attempt in $(/usr/bin/seq 1 3); do
                 if [ "${attempt}" -eq 3 ]; then
@@ -1110,12 +1127,23 @@
               set -euo pipefail
 
               export OPENSHELL_GATEWAY=openshell-local
-              gateway_token="$(cat "{{ openclaw_gateway_token_path }}")"
+                      gateway_token="$(cat "{{ openclaw_gateway_token_path }}")"
 
-              {% if openclaw_demo_csb_enabled_cfg | bool %}
-              for attempt in $(/usr/bin/seq 1 60); do
-                if /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
-                  /bin/sh -c 'curl -fsS http://127.0.0.1:18789/healthz >/dev/null 2>&1'; then
+                      {% if openclaw_demo_csb_enabled_cfg | bool %}
+                      for attempt in $(/usr/bin/seq 1 60); do
+                        sandbox_state="$(
+                          /usr/local/bin/openshell sandbox list \
+                            | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+                        )"
+                        if [ "${sandbox_state}" = "Ready" ]; then
+                          break
+                        fi
+                        /usr/bin/sleep 2
+                      done
+
+                      for attempt in $(/usr/bin/seq 1 60); do
+                        if /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
+                          /bin/sh -c 'curl -fsS http://127.0.0.1:18789/healthz >/dev/null 2>&1'; then
                   exit 0
                 fi
                 /usr/bin/sleep 2
