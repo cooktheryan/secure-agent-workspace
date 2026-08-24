@@ -17,7 +17,7 @@
     inference_https_proxy_cfg: "{{ inference_https_proxy | default('') }}"
     provider_sel: "{{ provider_map[inference_provider_cfg] | mandatory }}"
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
-    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-integ-vm"
+    trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-agent-vm"
     openclaw_demo_csb_enabled_cfg: "{{ openclaw_demo_csb_enabled | default(false) }}"
     openclaw_sandbox_uid_cfg: "{{ openclaw_sandbox_uid | default('65532') }}"
     openclaw_sandbox_gid_cfg: "{{ openclaw_sandbox_gid | default(openclaw_sandbox_uid_cfg) }}"
@@ -1329,20 +1329,10 @@
 
                   node /tmp/bootstrap-openclaw-beta2-db.mjs
 
-                  if [ -x /usr/local/bin/entrypoint.sh ]; then
-                    nohup /usr/local/bin/entrypoint.sh \
-                      openclaw gateway run \
-                      --allow-unconfigured \
-                      --bind lan \
-                      --port {{ openclaw_forward_port_cfg }} \
-                      >/tmp/openclaw-gateway.log 2>&1 </dev/null &
-                  elif [ -x /app/entrypoint.sh ]; then
-                    nohup /app/entrypoint.sh \
-                      openclaw gateway run \
-                      --allow-unconfigured \
-                      --bind lan \
-                      --port {{ openclaw_forward_port_cfg }} \
-                      >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                  if [ -x /app/entrypoint.sh ]; then
+                    nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                  elif [ -x /usr/local/bin/entrypoint.sh ]; then
+                    nohup /usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &
                   else
                     mkdir -p "${OPENCLAW_STATE_DIR}" "${OPENCLAW_WORKSPACE_DIR}"
                     openclaw config set gateway.mode local

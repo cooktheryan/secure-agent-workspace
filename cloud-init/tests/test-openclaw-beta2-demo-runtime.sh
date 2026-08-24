@@ -7,10 +7,10 @@ agent_vars="$repo_root/cloud-init/ansible/vars/agent-vars.example.yml"
 policy_template="$repo_root/cloud-init/ansible/templates/openclaw-policy.yml.j2"
 bootstrap="$repo_root/cloud-init/ansible/files/bootstrap-openclaw-beta2-db.mjs"
 
-grep -Fq 'sandbox_image: quay.io/rh-forge/openclaw-saw:2026.8.1-beta.2-20260821160256' "$agent_vars"
+grep -Fq 'sandbox_image: quay.io/redhat-et/openclaw-saw:latest' "$agent_vars"
 grep -Fq 'openclaw_demo_csb_enabled: true' "$agent_vars"
-grep -Fq 'openclaw_sandbox_uid: "1001"' "$agent_vars"
-grep -Fq 'openclaw_sandbox_gid: "1001"' "$agent_vars"
+grep -Fq 'openclaw_sandbox_uid: "1000"' "$agent_vars"
+grep -Fq 'openclaw_sandbox_gid: "1000"' "$agent_vars"
 
 test -f "$bootstrap"
 grep -Fq 'DatabaseSync' "$bootstrap"
@@ -40,12 +40,14 @@ if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook";
   echo "beta2 startup must not gate on openclaw --version because this image can exit 137 before gateway launch" >&2
   exit 1
 fi
-grep -Fq 'if [ -x /usr/local/bin/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq 'nohup /usr/local/bin/entrypoint.sh \' "$agent_playbook"
-grep -Fq 'openclaw gateway run \' "$agent_playbook"
-grep -Fq 'elif [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq 'nohup /app/entrypoint.sh \' "$agent_playbook"
+grep -Fq 'if [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
+grep -Fq 'nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
+grep -Fq 'elif [ -x /usr/local/bin/entrypoint.sh ]; then' "$agent_playbook"
+grep -Fq 'nohup /usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
 grep -Fq 'nohup openclaw gateway run' "$agent_playbook"
-grep -Fq -- '--port {{ openclaw_forward_port_cfg }}' "$agent_playbook"
+if grep -Fq '/app/entrypoint.sh \' "$agent_playbook"; then
+  echo "demo CSB entrypoint must be launched directly; it does not consume legacy gateway args" >&2
+  exit 1
+fi
 
 echo "OpenClaw beta2 demo runtime contract is baked into saw-agent provisioning"

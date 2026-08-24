@@ -9,7 +9,11 @@ filesystem_policy:
     - /proc
     - /dev/urandom
     - /app
+{% if openclaw_demo_csb_enabled_cfg | bool %}
+    - /opt/m365
+{% else %}
     - /opt
+{% endif %}
     - /var/log
   read_write:
     - /sandbox

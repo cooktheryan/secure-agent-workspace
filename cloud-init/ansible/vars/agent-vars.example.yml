@@ -37,10 +37,10 @@ inference_https_proxy: ""
 integration_proxy_ca_pem: ""
 
 openshell_version: 0.0.103
-sandbox_image: quay.io/rh-forge/openclaw-saw:2026.8.1-beta.2-20260821160256
+sandbox_image: quay.io/redhat-et/openclaw-saw:latest
 openclaw_demo_csb_enabled: true
-openclaw_sandbox_uid: "1001"
-openclaw_sandbox_gid: "1001"
+openclaw_sandbox_uid: "1000"
+openclaw_sandbox_gid: "1000"
 gateway_image: ghcr.io/nvidia/openshell/gateway:0.0.103
 supervisor_image: ghcr.io/nvidia/openshell/supervisor:0.0.103
 openclaw_proxy_image: quay.io/oauth2-proxy/oauth2-proxy@sha256:10a1165743a192e1940b4708fb9647027185ce11a681a1c5519b442ff7f1f561
