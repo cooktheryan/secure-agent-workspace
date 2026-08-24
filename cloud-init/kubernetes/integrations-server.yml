@@ -21,33 +21,10 @@ spec:
       runcmd:
         - |
           set -eu
-          install -d -m 0750 /etc/openshell-saw
-          vars_device=""
-          for attempt in $(seq 1 36); do
-            udevadm settle --timeout=5 || true
-            vars_device="$(lsblk -rpno NAME,SERIAL | awk '$2=="VARS01"{print $1;exit}')"
-            if [ -n "${vars_device}" ]; then
-              break
-            fi
-            echo "waiting for VARS01 vars disk (attempt ${attempt}/36)"
-            lsblk -rpno NAME,SERIAL,FSTYPE,SIZE,MOUNTPOINT || true
-            sleep 10
-          done
-          if [ -z "${vars_device}" ]; then
-            echo "VARS01 vars disk was not found" >&2
-            lsblk -rpno NAME,SERIAL,FSTYPE,SIZE,MOUNTPOINT >&2 || true
-            exit 1
-          fi
-          mountpoint -q /etc/openshell-saw || mount -o ro "${vars_device}" /etc/openshell-saw
-          test -f /etc/openshell-saw/vars.yml
-          echo "mounted ${vars_device} at /etc/openshell-saw"
-          checkout=/opt/secure-agent-workspace
-          install -d -m 0755 "${checkout}"
-          # Gist-based bootstrap is deprecated; use this versioned repository branch.
           curl -fsSL --retry 5 --retry-delay 10 \
-            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/feat/openclaw-demo-alignment.tar.gz \
-            | tar -xz --strip-components=1 -C "${checkout}"
-          systemd-run --unit=saw-provision.service --setenv=HOME=/root /usr/bin/bash -c 'exec /usr/bin/ansible-playbook -i localhost, /opt/secure-agent-workspace/cloud-init/ansible/site.yml -e @/etc/openshell-saw/vars.yml > /var/log/saw-provision.log 2>&1'
+            https://raw.githubusercontent.com/cooktheryan/secure-agent-workspace/feat/openclaw-demo-alignment/cloud-init/files/bootstrap-server.sh \
+            -o /tmp/saw-bootstrap-server.sh
+          bash /tmp/saw-bootstrap-server.sh
   containerDiskImage: registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:master-e4b3a21-20260707-093716
   operatingSystem: ""
   profile: c1.m4

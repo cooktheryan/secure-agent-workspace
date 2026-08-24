@@ -101,6 +101,13 @@ Feature: saw-agent persistent OpenClaw state
       When cloud-init prepares the provisioning variables mount
       Then cloud-init waits for the VARS01 disk and verifies vars.yml before provisioning starts
 
+  Rule: While Cirrus creates saw-agent, the Server cloud-init payload shall stay small enough for the platform controller to launch the VM.
+
+    Scenario: saw-agent cloud-init delegates bootstrap logic to the repository script
+      Given saw-agent is launched through the Cirrus Server controller
+      When the Server manifest is submitted
+      Then cloud-init downloads and runs the repository bootstrap script instead of embedding the full bootstrap logic
+
   Rule: If OpenClaw user services fail to start, then the agent playbook shall report sandbox and unit diagnostics before failing.
 
     Scenario: OpenClaw sandbox start failure includes actionable diagnostics
