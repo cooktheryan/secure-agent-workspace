@@ -111,9 +111,9 @@
           'models': {
             'providers': {
               (inference_provider_cfg): {
-                'baseUrl': 'https://inference.local/v1',
+                'baseUrl': inference_endpoint_url_cfg,
                 'api': 'openai-completions',
-                'apiKey': 'proxy-managed',
+                'apiKey': inference_api_key_cfg,
                 'models': [
                   openclaw_known_openai_model_catalog.get(inference_model_cfg, {})
                 ]
@@ -938,7 +938,6 @@
                     --driver-config-json "${driver_config_json}" \
                     --no-tty \
                     --memory 12Gi \
-                    --provider {{ inference_provider_name }} \
                     -- /bin/sh -c "echo sandbox-ready"
                 fi
 
@@ -949,7 +948,6 @@
                   --driver-config-json "${driver_config_json}" \
                   --no-tty \
                   --memory 12Gi \
-                  --provider {{ inference_provider_name }} \
                   -- /bin/sh -c "echo sandbox-ready" && exit 0
                 /usr/bin/sleep 5
               done
@@ -1133,9 +1131,7 @@
             content: |
               [Unit]
               Description=Keycloak-authenticated OpenClaw proxy
-              Requires=openclaw-forward.service
               After=openclaw-forward.service
-              PartOf=openclaw-sandbox.service
 
               [Service]
               Type=simple

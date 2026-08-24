@@ -9,9 +9,9 @@ agent_vars="$repo_root/cloud-init/ansible/vars/agent-vars.example.yml"
 # was validated in the OpenClaw UI: OpenClaw talks to OpenShell's inference
 # route as an OpenAI-compatible completions provider, while oauth2-proxy supplies
 # authenticated user identity via trusted-proxy headers.
-grep -Fq "'baseUrl': 'https://inference.local/v1'" "$agent_playbook"
+grep -Fq "'baseUrl': inference_endpoint_url_cfg" "$agent_playbook"
 grep -Fq "'api': 'openai-completions'" "$agent_playbook"
-grep -Fq "'apiKey': 'proxy-managed'" "$agent_playbook"
+grep -Fq "'apiKey': inference_api_key_cfg" "$agent_playbook"
 grep -Fq 'id: "{{ inference_model_cfg }}"' "$agent_playbook"
 grep -Fq "reasoning: false" "$agent_playbook"
 grep -Fq "openclaw config patch" "$agent_playbook"
@@ -26,6 +26,17 @@ grep -Fq "'allowLoopback': true" "$agent_playbook"
 grep -Fq "'trustedProxies': ['127.0.0.1', '::1']" "$agent_playbook"
 grep -Fq "'allowedOrigins': [openclaw_route_origin_cfg]" "$agent_playbook"
 
+auth_proxy_unit="$(awk '/Description=Keycloak-authenticated OpenClaw proxy/{in_unit=1} in_unit{print} in_unit && /WantedBy=default.target/{exit}' "$agent_playbook")"
+grep -Fq "After=openclaw-forward.service" <<<"$auth_proxy_unit"
+if grep -Fq "Requires=openclaw-forward.service" <<<"$auth_proxy_unit"; then
+  echo "auth proxy must not require the OpenClaw one-shot dependency chain after it has been verified" >&2
+  exit 1
+fi
+if grep -Fq "PartOf=openclaw-sandbox.service" <<<"$auth_proxy_unit"; then
+  echo "auth proxy must not be coupled to the sandbox one-shot unit lifecycle" >&2
+  exit 1
+fi
+
 if grep -Fq "openai-responses" "$agent_playbook"; then
   echo "agent playbook must not bake the failing openai-responses runtime provider for the live OpenClaw gateway" >&2
   exit 1
@@ -38,6 +49,16 @@ fi
 
 if grep -Fq "openclaw onboard" "$agent_playbook"; then
   echo "agent playbook must write runtime config directly instead of running killed onboarding at boot" >&2
+  exit 1
+fi
+
+if awk '
+  /openshell sandbox create/ { in_create=1 }
+  in_create && /--provider {{ inference_provider_name }}/ { found=1 }
+  in_create && /sandbox-ready/ { in_create=0 }
+  END { exit found ? 0 : 1 }
+' "$agent_playbook"; then
+  echo "agent playbook must not create provider-bound OpenClaw sandboxes because the runtime exits 137 there" >&2
   exit 1
 fi
 

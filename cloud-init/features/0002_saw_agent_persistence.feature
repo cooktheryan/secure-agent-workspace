@@ -106,9 +106,24 @@ Feature: saw-agent persistent OpenClaw state
       When agent provisioning writes OpenClaw runtime configuration
       Then OpenClaw receives the configured provider API key and gateway mode without running onboarding
 
+  Rule: If OpenClaw exits when the sandbox is bound to an OpenShell provider, then the agent playbook shall create the OpenClaw sandbox without provider bindings.
+
+    Scenario: OpenClaw runtime avoids provider-bound sandbox termination
+      Given saw-agent is deployed with the GLM integration proxy
+      When agent provisioning creates the OpenClaw sandbox
+      Then the sandbox is created without an OpenShell provider binding
+      And OpenClaw uses the internal saw-integ service as its provider endpoint
+
   Rule: While OpenClaw user services are being started, the agent playbook shall verify actual service activity before failing provisioning.
 
     Scenario: Active OpenClaw services are accepted after noisy start output
       Given OpenClaw user services have been requested to start
       When the service manager reports their actual activity
       Then provisioning continues if the required services are active
+
+  Rule: If OpenClaw one-shot dependencies have already been verified, then the auth proxy unit shall not require the gateway dependency chain.
+
+    Scenario: Auth proxy startup avoids re-evaluating verified one-shot services
+      Given OpenClaw sandbox, gateway, and forward services are active
+      When provisioning starts the authenticated proxy
+      Then the authenticated proxy starts without requiring the OpenClaw gateway dependency chain

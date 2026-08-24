@@ -15,9 +15,19 @@ grep -Fq "'providers': {" "$agent_playbook"
 grep -Fq "(inference_provider_cfg): {" "$agent_playbook"
 grep -Fq "'primary': inference_provider_cfg ~ '/' ~ inference_model_cfg" "$agent_playbook"
 grep -Fq "'api': 'openai-completions'" "$agent_playbook"
-grep -Fq "'apiKey': 'proxy-managed'" "$agent_playbook"
-grep -Fq "'baseUrl': 'https://inference.local/v1'" "$agent_playbook"
+grep -Fq "'baseUrl': inference_endpoint_url_cfg" "$agent_playbook"
+grep -Fq "'apiKey': inference_api_key_cfg" "$agent_playbook"
 grep -Fq "rits/zai-org/glm-5-2-fp8:" "$agent_playbook"
+
+if awk '
+  /openshell sandbox create/ { in_create=1 }
+  in_create && /--provider {{ inference_provider_name }}/ { found=1 }
+  in_create && /sandbox-ready/ { in_create=0 }
+  END { exit found ? 0 : 1 }
+' "$agent_playbook"; then
+  echo "agent playbook must not bind the sandbox provider because provider-bound OpenClaw exits 137" >&2
+  exit 1
+fi
 
 if grep -Fq "openclaw onboard" "$agent_playbook"; then
   echo "agent playbook must not run OpenClaw onboarding during boot; direct runtime config replaces it" >&2
