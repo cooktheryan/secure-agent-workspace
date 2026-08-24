@@ -1055,38 +1055,16 @@
               {% if openclaw_demo_csb_enabled_cfg | bool %}
               create_openclaw_sandbox >/tmp/openclaw-sandbox-create.log 2>&1 </dev/null &
               create_pid=$!
-
-              for attempt in $(/usr/bin/seq 1 90); do
-                sandbox_state="$(
-                  /usr/local/bin/openshell sandbox list \
-                    | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
-                )"
-                if [ -n "${sandbox_state}" ]; then
-                  disown "${create_pid}" 2>/dev/null || true
-                  exit 0
-                fi
-
-                if ! /usr/bin/kill -0 "${create_pid}" 2>/dev/null; then
-                  create_rc=0
-                  wait "${create_pid}" || create_rc=$?
-                  sandbox_state="$(
-                    /usr/local/bin/openshell sandbox list \
-                      | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
-                  )"
-                  if [ -n "${sandbox_state}" ]; then
-                    exit 0
-                  fi
-                  echo "OpenClaw sandbox create exited before the sandbox existed (rc=${create_rc})" >&2
-                  /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
-                  exit "${create_rc}"
-                fi
-
-                /usr/bin/sleep 2
-              done
-
-              echo "OpenClaw sandbox create did not report a sandbox before timeout" >&2
-              /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
-              exit 1
+              /usr/bin/sleep 3
+              if ! /usr/bin/kill -0 "${create_pid}" 2>/dev/null; then
+                create_rc=0
+                wait "${create_pid}" || create_rc=$?
+                echo "OpenClaw sandbox create exited before the gateway health check could run (rc=${create_rc})" >&2
+                /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
+                exit "${create_rc}"
+              fi
+              disown "${create_pid}" 2>/dev/null || true
+              exit 0
               {% else %}
               create_openclaw_sandbox
               {% endif %}

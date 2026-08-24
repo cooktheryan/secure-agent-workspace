@@ -72,8 +72,10 @@ if grep -Fq 'Restart=on-failure' <<<"$sandbox_unit_block"; then
   exit 1
 fi
 grep -Fq 'disown "${create_pid}"' "$agent_playbook"
-grep -Fq '[ -n "${sandbox_state}" ]' "$agent_playbook"
-grep -Fq 'OpenClaw sandbox create exited before the sandbox existed' "$agent_playbook"
-grep -Fq 'OpenClaw sandbox create did not report a sandbox before timeout' "$agent_playbook"
+grep -Fq 'create_openclaw_sandbox >/tmp/openclaw-sandbox-create.log 2>&1 </dev/null &' "$agent_playbook"
+if grep -Fq 'OpenClaw sandbox create did not report a sandbox before timeout' "$agent_playbook"; then
+  echo "sandbox service must not block waiting for sandbox list while create owns the gateway foreground" >&2
+  exit 1
+fi
 
 echo "OpenClaw beta2 demo runtime contract is baked into saw-agent provisioning"
