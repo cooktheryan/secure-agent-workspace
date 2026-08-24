@@ -94,6 +94,13 @@ Feature: saw-agent persistent OpenClaw state
       When role dispatch provisioning installs shared agent packages
       Then provisioning avoids the unavailable python3-pip package
 
+  Rule: If the vars ISO is slow to appear during guest boot, then saw-agent cloud-init shall wait for the VARS01 disk before provisioning.
+
+    Scenario: Delayed vars disk does not fail saw-agent cloud-init
+      Given saw-agent starts before the vars disk is immediately discoverable
+      When cloud-init prepares the provisioning variables mount
+      Then cloud-init waits for the VARS01 disk and verifies vars.yml before provisioning starts
+
   Rule: If OpenClaw user services fail to start, then the agent playbook shall report sandbox and unit diagnostics before failing.
 
     Scenario: OpenClaw sandbox start failure includes actionable diagnostics
