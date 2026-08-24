@@ -1597,14 +1597,74 @@
               ansible.builtin.fail:
                 msg: OpenClaw user services failed to start; see diagnostics above.
 
-        - name: Enable + start OpenClaw auth proxy
-          ansible.builtin.systemd:
-            name: openclaw-auth-proxy.service
-            scope: user
-            enabled: true
-            state: started
-            daemon_reload: true
+        - name: Enable + start OpenClaw auth proxy with diagnostics
           when: openclaw_proxy_enabled_cfg | bool
+          block:
+            - name: Enable + start OpenClaw auth proxy
+              ansible.builtin.systemd:
+                name: openclaw-auth-proxy.service
+                scope: user
+                enabled: true
+                state: started
+                daemon_reload: true
+          rescue:
+            - name: Read OpenClaw auth proxy dependency status
+              ansible.builtin.command: >-
+                systemctl --user status
+                openclaw-sandbox.service
+                openclaw-gateway.service
+                openclaw-forward.service
+                openclaw-auth-proxy.service
+                --no-pager -l
+              register: openclaw_proxy_dependency_status
+              changed_when: false
+              failed_when: false
+
+            - name: Read OpenClaw auth proxy dependency journal
+              ansible.builtin.command: >-
+                journalctl --user
+                -u openclaw-sandbox.service
+                -u openclaw-gateway.service
+                -u openclaw-forward.service
+                -u openclaw-auth-proxy.service
+                -n 220 --no-pager -o cat
+              register: openclaw_proxy_dependency_journal
+              changed_when: false
+              failed_when: false
+
+            - name: Inspect OpenClaw sandbox list after auth proxy start failure
+              ansible.builtin.command: openshell sandbox list
+              register: openclaw_proxy_failure_sandboxes
+              changed_when: false
+              failed_when: false
+
+            - name: Read OpenClaw gateway launch log after auth proxy start failure
+              ansible.builtin.command: >-
+                openshell sandbox exec --name {{ sandbox_name }} --no-tty --
+                /bin/sh -c 'cat /tmp/openclaw-gateway.log 2>/dev/null || true'
+              register: openclaw_proxy_failure_gateway_log
+              changed_when: false
+              failed_when: false
+
+            - name: Display OpenClaw auth proxy dependency status
+              ansible.builtin.debug:
+                var: openclaw_proxy_dependency_status.stdout_lines
+
+            - name: Display OpenClaw auth proxy dependency journal
+              ansible.builtin.debug:
+                var: openclaw_proxy_dependency_journal.stdout_lines
+
+            - name: Display OpenClaw sandbox list after auth proxy start failure
+              ansible.builtin.debug:
+                var: openclaw_proxy_failure_sandboxes.stdout_lines
+
+            - name: Display OpenClaw gateway launch log after auth proxy start failure
+              ansible.builtin.debug:
+                var: openclaw_proxy_failure_gateway_log.stdout_lines
+
+            - name: Fail provisioning after OpenClaw auth proxy start diagnostics
+              ansible.builtin.fail:
+                msg: OpenClaw auth proxy failed to start; see dependency diagnostics above.
 
         - name: Verify OpenClaw auth proxy readiness with diagnostics
           when: openclaw_proxy_enabled_cfg | bool

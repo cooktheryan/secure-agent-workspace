@@ -115,6 +115,11 @@ Feature: saw-agent persistent OpenClaw state
       When an OpenClaw user service fails to start
       Then provisioning reports the sandbox list and recent user service journal
 
+    Scenario: OpenClaw auth proxy start failure includes dependency diagnostics
+      Given saw-agent has generated OpenClaw auth proxy and gateway units
+      When the OpenClaw auth proxy service fails to start
+      Then provisioning reports auth proxy dependency status and recent user service journal
+
 
   Rule: While OpenClaw runtime config is generated, the agent playbook shall persist the live-good OpenAI completions provider and trusted-proxy settings.
 
