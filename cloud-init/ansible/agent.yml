@@ -1330,9 +1330,11 @@
                   node /tmp/bootstrap-openclaw-beta2-db.mjs
 
                   if [ -x /app/entrypoint.sh ]; then
-                    nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                    /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                    gateway_pid=$!
                   elif [ -x /usr/local/bin/entrypoint.sh ]; then
-                    nohup /usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                    /usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                    gateway_pid=$!
                   else
                     mkdir -p "${OPENCLAW_STATE_DIR}" "${OPENCLAW_WORKSPACE_DIR}"
                     openclaw config set gateway.mode local
@@ -1343,12 +1345,29 @@
                     openclaw config set agents.defaults.model.primary "{{ inference_provider_cfg }}/{{ inference_model_cfg }}"
                     openclaw config set agents.defaults.models "{\"{{ inference_provider_cfg }}/{{ inference_model_cfg }}\":{}}" --strict-json --replace
                     openclaw config validate --json
-                    nohup openclaw gateway run \
+                    openclaw gateway run \
                       --allow-unconfigured \
                       --bind lan \
                       --port {{ openclaw_forward_port_cfg }} \
                       >/tmp/openclaw-gateway.log 2>&1 </dev/null &
+                    gateway_pid=$!
                   fi
+
+                  for attempt in $(seq 1 60); do
+                    if node -e 'fetch("http://127.0.0.1:{{ openclaw_forward_port_cfg }}/ready").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then
+                      exit 0
+                    fi
+                    if ! kill -0 "${gateway_pid}" 2>/dev/null; then
+                      echo "OpenClaw demo gateway exited before readiness" >&2
+                      sed -n "1,240p" /tmp/openclaw-gateway.log >&2 || true
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+
+                  echo "OpenClaw demo gateway did not become ready" >&2
+                  sed -n "1,240p" /tmp/openclaw-gateway.log >&2 || true
+                  exit 1
                 ' </dev/null
                 {% else %}
                 --env CUSTOM_API_KEY=proxy-managed \

@@ -41,12 +41,22 @@ if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook";
   exit 1
 fi
 grep -Fq 'if [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq 'nohup /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
+grep -Fq '/app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
 grep -Fq 'elif [ -x /usr/local/bin/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq 'nohup /usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
-grep -Fq 'nohup openclaw gateway run' "$agent_playbook"
+grep -Fq '/usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
+grep -Fq 'openclaw gateway run \' "$agent_playbook"
+grep -Fq 'gateway_pid=$!' "$agent_playbook"
+grep -Fq 'fetch("http://127.0.0.1:{{ openclaw_forward_port_cfg }}/ready")' "$agent_playbook"
+grep -Fq 'OpenClaw demo gateway did not become ready' "$agent_playbook"
+grep -Fq 'Type=oneshot' "$agent_playbook"
+grep -Fq 'RemainAfterExit=true' "$agent_playbook"
 if grep -Fq '/app/entrypoint.sh \' "$agent_playbook"; then
   echo "demo CSB entrypoint must be launched directly; it does not consume legacy gateway args" >&2
+  exit 1
+fi
+openclaw_runtime_block="$(awk '/Write reference-aligned OpenClaw launch script/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
+if grep -Fq 'Type=simple' <<<"$openclaw_runtime_block"; then
+  echo "demo CSB gateway unit must be a readiness-checked launcher, not a foreground wrapper" >&2
   exit 1
 fi
 
