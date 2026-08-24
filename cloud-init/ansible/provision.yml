@@ -42,6 +42,15 @@
       ansible.builtin.command: oc whoami
       changed_when: false
 
+    - name: Ensure namespace exists
+      ansible.builtin.command: oc create namespace {{ ns }} --dry-run=client -o yaml
+      register: ns_yaml
+      changed_when: false
+
+    - name: Apply namespace
+      ansible.builtin.shell: echo '{{ ns_yaml.stdout }}' | oc apply -f -
+      changed_when: true
+
     # ==========================================
     # Delete flow
     # ==========================================
