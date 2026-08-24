@@ -7,8 +7,8 @@ agent_vars="$repo_root/cloud-init/ansible/vars/agent-vars.example.yml"
 policy_template="$repo_root/cloud-init/ansible/templates/openclaw-policy.yml.j2"
 bootstrap="$repo_root/cloud-init/ansible/files/bootstrap-openclaw-beta2-db.mjs"
 
-grep -Fq 'sandbox_image: quay.io/redhat-et/openclaw-saw:latest' "$agent_vars"
-grep -Fq 'openclaw_demo_csb_enabled: true' "$agent_vars"
+grep -Fq 'sandbox_image: quay.io/rh-ai-quickstart/openclaw-openshell@sha256:f6226599b9bff9475bb0597e49d1612866597e319a0a63ac59e8eea7f864f32c' "$agent_vars"
+grep -Fq 'openclaw_demo_csb_enabled: false' "$agent_vars"
 grep -Fq 'openclaw_sandbox_uid: "1000"' "$agent_vars"
 grep -Fq 'openclaw_sandbox_gid: "1000"' "$agent_vars"
 

@@ -27,7 +27,7 @@ Default OpenShift/Cirrus resources:
 | Agent state PVC | `saw-agent-state-persist` |
 | Agent assets/container PVC | `saw-agent-assets-persist` |
 | Integration persistence PVC | `saw-integ-persist` |
-| OpenClaw browser Route | `Route/saw-agent-userport` |
+| OpenClaw browser Route | `Route/saw-agent-openclaw` |
 | OpenClaw sandbox name | `openclaw-saw` |
 
 Expected PVC sizing used during validation:
@@ -82,7 +82,7 @@ Run from the repository root:
 cd cloud-init
 
 export NS='rh-vm-test1'
-export ROUTE_HOST="saw-agent-userport.${NS}.dal.dev.cirrus.ibm.com"
+export ROUTE_HOST="saw-agent-openclaw.${NS}.dal.dev.cirrus.ibm.com"
 export ROUTE_ORIGIN="https://${ROUTE_HOST}"
 export ROUTE_CALLBACK="${ROUTE_ORIGIN}/oauth2/callback"
 
@@ -164,7 +164,7 @@ Create Routes after `Service/saw-agent` exists:
 ```bash
 perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-userport-route.yml | oc apply -f -
 
-oc -n "$NS" get route saw-agent-userport
+oc -n "$NS" get route saw-agent-openclaw
 ```
 
 ## 6. Provisioning verification
@@ -243,7 +243,7 @@ curl -sS -i http://127.0.0.1:18789/ready | sed -n '1,40p'
 Then open:
 
 ```text
-https://saw-agent-userport.<namespace>.dal.dev.cirrus.ibm.com/
+https://saw-agent-openclaw.<namespace>.dal.dev.cirrus.ibm.com/
 ```
 
 Sign in as an allowed Keycloak user, for example `alice`, and ask OpenClaw a
@@ -376,5 +376,5 @@ Before asking for review:
 - Server manifests use namespace-only substitution, not broad `envsubst`.
 - `saw-integ` readiness returns `{"status":"ready"}`.
 - `saw-agent` local `/ready` returns `HTTP/1.1 200 OK`.
-- Browser login works through `saw-agent-userport`.
+- Browser login works through `saw-agent-openclaw`.
 - A simple OpenClaw prompt reaches the configured model.

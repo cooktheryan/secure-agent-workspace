@@ -65,7 +65,7 @@ PR #6 changes the target from the older two-VM README into a stricter
   - `saw-agent`
   - `saw-integ`
 - [x] Use demo-facing route name/host pattern:
-  - `saw-agent-userport`
+  - `saw-agent-openclaw`
 - [x] Use persistent disk names selected for this environment:
   - `saw-agent-state-persist`
   - `saw-agent-assets-persist`
@@ -93,7 +93,7 @@ environment intentionally differs from the latest upstream demo workstream.
 - [ ] Reconcile VM naming. This branch uses `saw-agent` / `saw-integ`; PR #6's
   `demo.env.example` defaults to `demo1-agent` / `demo1-integ`.
 - [ ] Reconcile route/auth. This branch uses the authenticated
-  `saw-agent-userport` route; PR #6's Forge UI path uses a demo header injector
+  `saw-agent-openclaw` route; PR #6's Forge UI path uses a demo header injector
   and explicitly says it is not a production auth boundary.
 - [ ] Reconcile inference. This branch uses `saw-integ:18083` for the current
   OpenAI-compatible integration proxy; PR #6 reserves `18083` for M365 write

@@ -1,5 +1,13 @@
 Feature: OpenClaw demo runtime provisioning
 
+  Rule: While the demo CSB image exits during gateway launch, the default agent deployment shall use the stable OpenClaw runtime.
+
+    Scenario: Stable runtime is the default for collaborative validation
+      Given the demo CSB image exits during OpenClaw gateway launch
+      When saw-agent vars are prepared for the default deployment
+      Then the stable OpenClaw image is selected
+      And demo CSB mode is disabled unless explicitly enabled
+
   Rule: Where demo CSB mode is enabled, the agent provisioning shall launch OpenClaw with the demo entrypoint and persistent sandbox state.
 
     Scenario: Demo runtime uses persistent state and the CSB entrypoint

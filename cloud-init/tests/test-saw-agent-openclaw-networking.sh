@@ -34,8 +34,11 @@ grep -Fq 'OpenShell gateway was not ready after waiting for sandbox list' "$agen
 grep -Fq 'for attempt in $(/usr/bin/seq 1 30); do' "$agent_playbook"
 grep -Fq 'openshell-default--{{ sandbox_name }}-' "$agent_playbook"
 grep -Fq '/usr/bin/podman ps -a --format' "$agent_playbook"
-grep -Fq 'for attempt in $(/usr/bin/seq 1 3); do' "$agent_playbook"
-grep -Fq 'exec /usr/local/bin/openshell sandbox create \' "$agent_playbook"
+grep -Fq 'for attempt in $(/usr/bin/seq 1 10); do' "$agent_playbook"
+grep -Fq '/usr/bin/timeout 30s /usr/local/bin/openshell sandbox delete {{ sandbox_name }}' "$agent_playbook"
+grep -Fq 'OpenClaw sandbox remained in ${sandbox_state_after_delete} after delete; refusing to recreate yet' "$agent_playbook"
+grep -Fq 'create_openclaw_sandbox() {' "$agent_playbook"
+grep -Fq '/usr/local/bin/openshell sandbox create \' "$agent_playbook"
 grep -Fq -- '--name {{ sandbox_name }} \' "$agent_playbook"
 
 if grep -Fq 'ExecStart=/usr/bin/bash -lc' "$agent_playbook"; then

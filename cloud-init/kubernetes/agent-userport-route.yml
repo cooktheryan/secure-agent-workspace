@@ -1,13 +1,13 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: saw-agent-userport
+  name: saw-agent-openclaw
   namespace: ${NS}
   labels:
     app.kubernetes.io/name: secure-agent-workspace
     app.kubernetes.io/component: saw-agent
 spec:
-  host: saw-agent-userport.${NS}.dal.dev.cirrus.ibm.com
+  host: saw-agent-openclaw.${NS}.dal.dev.cirrus.ibm.com
   port:
     targetPort: userport
   tls:
