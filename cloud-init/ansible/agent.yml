@@ -1011,48 +1011,7 @@
                         fi
                       fi
 
-              for attempt in $(/usr/bin/seq 1 3); do
-                if [ "${attempt}" -eq 3 ]; then
-                  exec /usr/local/bin/openshell sandbox create \
-                    --name {{ sandbox_name }} \
-                    --from {{ trusted_sandbox_image_cfg }} \
-                    --policy {{ user_home }}/.config/openshell/openclaw-policy.yml \
-                    --driver-config-json "${driver_config_json}" \
-                    {% if openclaw_demo_csb_enabled_cfg | bool %}
-                    --upload {{ playbook_dir }}/files/bootstrap-openclaw-beta2-db.mjs:/tmp/bootstrap-openclaw-beta2-db.mjs \
-                    {% endif %}
-                    --no-tty \
-                    --memory 12Gi \
-                    --provider {{ inference_provider_name }} \
-                    {% if openclaw_demo_csb_enabled_cfg | bool %}
-                    --env OPENCLAW_GATEWAY_TOKEN="${gateway_token}" \
-                    --env OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw \
-                    --env OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace \
-                    --env OPENCLAW_NO_RESPAWN=1 \
-                    --env NODE_DISABLE_COMPILE_CACHE=1 \
-                    --env OPENCLAW_WIDGET_PORT=18790 \
-                    --env OPENCLAW_PUBLIC_URL={{ openclaw_route_origin_cfg }} \
-                    --env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }} \
-                    --env OPENCLAW_PROVIDERS='{{ openclaw_providers_json }}' \
-                    -- /bin/sh -lc '
-                      set -eu
-                      export HOME=/sandbox
-                      export OPENCLAW_HOME=/sandbox
-                      export OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw
-                      export OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace
-                      export NODE_DISABLE_COMPILE_CACHE=1
-                      export SQLITE_TMPDIR=/tmp
-                      export TMPDIR=/tmp
-                      mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
-                      node /tmp/bootstrap-openclaw-beta2-db.mjs
-                      node -e "const net = require(\"node:net\"); const server = net.createServer((client) => { const upstream = net.connect(18789, \"127.0.0.1\"); client.on(\"error\", () => upstream.destroy()); upstream.on(\"error\", () => client.destroy()); client.pipe(upstream); upstream.pipe(client); }); server.on(\"error\", (err) => { if (err && err.code === \"EADDRINUSE\") process.exit(0); console.error(err); process.exit(1); }); server.listen({ host: \"127.0.0.1\", port: {{ openclaw_forward_port_cfg }} });" >/tmp/openclaw-forward-port-bridge.log 2>&1 &
-                      exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1
-                    '
-                    {% else %}
-                    -- /bin/sh -c "echo sandbox-ready"
-                    {% endif %}
-                fi
-
+              create_openclaw_sandbox() {
                 /usr/local/bin/openshell sandbox create \
                   --name {{ sandbox_name }} \
                   --from {{ trusted_sandbox_image_cfg }} \
@@ -1087,12 +1046,50 @@
                     node /tmp/bootstrap-openclaw-beta2-db.mjs
                     node -e "const net = require(\"node:net\"); const server = net.createServer((client) => { const upstream = net.connect(18789, \"127.0.0.1\"); client.on(\"error\", () => upstream.destroy()); upstream.on(\"error\", () => client.destroy()); client.pipe(upstream); upstream.pipe(client); }); server.on(\"error\", (err) => { if (err && err.code === \"EADDRINUSE\") process.exit(0); console.error(err); process.exit(1); }); server.listen({ host: \"127.0.0.1\", port: {{ openclaw_forward_port_cfg }} });" >/tmp/openclaw-forward-port-bridge.log 2>&1 &
                     exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1
-                  ' && exit 0
+                  '
                   {% else %}
-                  -- /bin/sh -c "echo sandbox-ready" && exit 0
+                  -- /bin/sh -c "echo sandbox-ready"
                   {% endif %}
-                /usr/bin/sleep 5
+              }
+
+              {% if openclaw_demo_csb_enabled_cfg | bool %}
+              create_openclaw_sandbox >/tmp/openclaw-sandbox-create.log 2>&1 </dev/null &
+              create_pid=$!
+
+              for attempt in $(/usr/bin/seq 1 90); do
+                sandbox_state="$(
+                  /usr/local/bin/openshell sandbox list \
+                    | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+                )"
+                if [ "${sandbox_state}" = "Ready" ]; then
+                  disown "${create_pid}" 2>/dev/null || true
+                  exit 0
+                fi
+
+                if ! /usr/bin/kill -0 "${create_pid}" 2>/dev/null; then
+                  create_rc=0
+                  wait "${create_pid}" || create_rc=$?
+                  sandbox_state="$(
+                    /usr/local/bin/openshell sandbox list \
+                      | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+                  )"
+                  if [ "${sandbox_state}" = "Ready" ]; then
+                    exit 0
+                  fi
+                  echo "OpenClaw sandbox create exited before the sandbox became Ready (rc=${create_rc}, state=${sandbox_state:-absent})" >&2
+                  /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
+                  exit "${create_rc}"
+                fi
+
+                /usr/bin/sleep 2
               done
+
+              echo "OpenClaw sandbox create did not report Ready before timeout" >&2
+              /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
+              exit 1
+              {% else %}
+              create_openclaw_sandbox
+              {% endif %}
 
         - name: Write openclaw sandbox systemd user unit
           ansible.builtin.copy:
@@ -1103,16 +1100,11 @@
               Description=OpenClaw gateway (openshell-managed sandbox)
 
               [Service]
-              Type={% if openclaw_demo_csb_enabled_cfg | bool %}simple{% else %}oneshot{% endif %}
+              Type=oneshot
               Environment=OPENSHELL_GATEWAY=openshell-local
               Environment=NO_COLOR=1
               ExecStart=%h/.local/bin/ensure-openclaw-sandbox
-              {% if openclaw_demo_csb_enabled_cfg | bool %}
-              Restart=on-failure
-              RestartSec=5
-              {% else %}
               RemainAfterExit=true
-              {% endif %}
               TimeoutStopSec=60s
 
               [Install]

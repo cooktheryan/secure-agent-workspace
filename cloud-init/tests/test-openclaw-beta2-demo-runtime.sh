@@ -61,7 +61,17 @@ gateway_unit_block="$(awk '/Write openclaw gateway systemd user unit/{in_block=1
 grep -Fq 'Type=oneshot' <<<"$gateway_unit_block"
 grep -Fq 'RemainAfterExit=true' <<<"$gateway_unit_block"
 sandbox_unit_block="$(awk '/Write openclaw sandbox systemd user unit/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
-grep -Fq 'Type={% if openclaw_demo_csb_enabled_cfg | bool %}simple{% else %}oneshot{% endif %}' <<<"$sandbox_unit_block"
-grep -Fq 'Restart=on-failure' <<<"$sandbox_unit_block"
+if grep -Fq 'Type={% if' <<<"$sandbox_unit_block"; then
+  echo "sandbox unit must not render Type and Environment on one line" >&2
+  exit 1
+fi
+grep -Fq 'Type=oneshot' <<<"$sandbox_unit_block"
+grep -Fq 'RemainAfterExit=true' <<<"$sandbox_unit_block"
+if grep -Fq 'Restart=on-failure' <<<"$sandbox_unit_block"; then
+  echo "sandbox creation must not restart after OpenShell leaves a Ready sandbox behind" >&2
+  exit 1
+fi
+grep -Fq 'disown "${create_pid}"' "$agent_playbook"
+grep -Fq 'OpenClaw sandbox create exited before the sandbox became Ready' "$agent_playbook"
 
 echo "OpenClaw beta2 demo runtime contract is baked into saw-agent provisioning"
