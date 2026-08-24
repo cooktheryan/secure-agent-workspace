@@ -1061,7 +1061,7 @@
                   /usr/local/bin/openshell sandbox list \
                     | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
                 )"
-                if [ "${sandbox_state}" = "Ready" ]; then
+                if [ -n "${sandbox_state}" ]; then
                   disown "${create_pid}" 2>/dev/null || true
                   exit 0
                 fi
@@ -1073,10 +1073,10 @@
                     /usr/local/bin/openshell sandbox list \
                       | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
                   )"
-                  if [ "${sandbox_state}" = "Ready" ]; then
+                  if [ -n "${sandbox_state}" ]; then
                     exit 0
                   fi
-                  echo "OpenClaw sandbox create exited before the sandbox became Ready (rc=${create_rc}, state=${sandbox_state:-absent})" >&2
+                  echo "OpenClaw sandbox create exited before the sandbox existed (rc=${create_rc})" >&2
                   /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
                   exit "${create_rc}"
                 fi
@@ -1084,7 +1084,7 @@
                 /usr/bin/sleep 2
               done
 
-              echo "OpenClaw sandbox create did not report Ready before timeout" >&2
+              echo "OpenClaw sandbox create did not report a sandbox before timeout" >&2
               /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
               exit 1
               {% else %}

@@ -15,10 +15,10 @@ Feature: OpenClaw demo runtime provisioning
       When the OpenClaw sandbox is provisioned in demo CSB mode
       Then the demo runtime ignores the legacy OpenClaw state path
 
-  Rule: Where demo CSB mode is enabled, the agent provisioning shall treat OpenShell sandbox creation as a one-shot readiness operation.
+  Rule: Where demo CSB mode is enabled, the agent provisioning shall treat OpenShell sandbox creation as a one-shot presence operation.
 
-    Scenario: Sandbox creation returns after OpenShell reports the sandbox ready
+    Scenario: Sandbox creation returns after OpenShell reports the sandbox exists
       Given the agent VM is configured for OpenClaw demo CSB mode
       When the OpenClaw sandbox is provisioned
-      Then the sandbox service waits for OpenShell to report the sandbox ready
-      And service restarts do not race with a ready sandbox
+      Then the sandbox service waits for OpenShell to report the sandbox exists
+      And gateway health is verified by the dependent gateway service
