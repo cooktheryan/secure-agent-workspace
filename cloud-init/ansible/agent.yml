@@ -1028,22 +1028,7 @@
                       export TMPDIR=/tmp
                       mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
                       node /tmp/bootstrap-openclaw-beta2-db.mjs
-                      node - <<NODE >/tmp/openclaw-forward-port-bridge.log 2>&1 &
-                      const net = require("node:net");
-                      const server = net.createServer((client) => {
-                        const upstream = net.connect(18789, "127.0.0.1");
-                        client.on("error", () => upstream.destroy());
-                        upstream.on("error", () => client.destroy());
-                        client.pipe(upstream);
-                        upstream.pipe(client);
-                      });
-                      server.on("error", (err) => {
-                        if (err && err.code === "EADDRINUSE") process.exit(0);
-                        console.error(err);
-                        process.exit(1);
-                      });
-                      server.listen({ host: "127.0.0.1", port: {{ openclaw_forward_port_cfg }} });
-NODE
+                      node -e "const net = require(\"node:net\"); const server = net.createServer((client) => { const upstream = net.connect(18789, \"127.0.0.1\"); client.on(\"error\", () => upstream.destroy()); upstream.on(\"error\", () => client.destroy()); client.pipe(upstream); upstream.pipe(client); }); server.on(\"error\", (err) => { if (err && err.code === \"EADDRINUSE\") process.exit(0); console.error(err); process.exit(1); }); server.listen({ host: \"127.0.0.1\", port: {{ openclaw_forward_port_cfg }} });" >/tmp/openclaw-forward-port-bridge.log 2>&1 &
                       exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1
                     '
                     {% else %}
@@ -1083,22 +1068,7 @@ NODE
                     export TMPDIR=/tmp
                     mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
                     node /tmp/bootstrap-openclaw-beta2-db.mjs
-                    node - <<NODE >/tmp/openclaw-forward-port-bridge.log 2>&1 &
-                    const net = require("node:net");
-                    const server = net.createServer((client) => {
-                      const upstream = net.connect(18789, "127.0.0.1");
-                      client.on("error", () => upstream.destroy());
-                      upstream.on("error", () => client.destroy());
-                      client.pipe(upstream);
-                      upstream.pipe(client);
-                    });
-                    server.on("error", (err) => {
-                      if (err && err.code === "EADDRINUSE") process.exit(0);
-                      console.error(err);
-                      process.exit(1);
-                    });
-                    server.listen({ host: "127.0.0.1", port: {{ openclaw_forward_port_cfg }} });
-NODE
+                    node -e "const net = require(\"node:net\"); const server = net.createServer((client) => { const upstream = net.connect(18789, \"127.0.0.1\"); client.on(\"error\", () => upstream.destroy()); upstream.on(\"error\", () => client.destroy()); client.pipe(upstream); upstream.pipe(client); }); server.on(\"error\", (err) => { if (err && err.code === \"EADDRINUSE\") process.exit(0); console.error(err); process.exit(1); }); server.listen({ host: \"127.0.0.1\", port: {{ openclaw_forward_port_cfg }} });" >/tmp/openclaw-forward-port-bridge.log 2>&1 &
                     exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1
                   ' && exit 0
                   {% else %}
