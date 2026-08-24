@@ -1067,6 +1067,14 @@
               if ! /usr/bin/kill -0 "${create_pid}" 2>/dev/null; then
                 create_rc=0
                 wait "${create_pid}" || create_rc=$?
+                sandbox_state="$(
+                  /usr/local/bin/openshell sandbox list \
+                    | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
+                )"
+                if [ -n "${sandbox_state}" ]; then
+                  echo "OpenClaw sandbox create exited with rc=${create_rc}, but {{ sandbox_name }} is ${sandbox_state}; continuing" >&2
+                  exit 0
+                fi
                 echo "OpenClaw sandbox create exited before the gateway health check could run (rc=${create_rc})" >&2
                 /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
                 exit "${create_rc}"
