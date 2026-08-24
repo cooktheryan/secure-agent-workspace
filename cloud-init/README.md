@@ -250,121 +250,15 @@ Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through saw-agent and sends model traffic from saw-agent
 to saw-integ over the internal `Service/saw-integ:18083` path.
 
-## Optional VM-hosted Forge UI side-by-side preview
+## Forge UI boundary
 
-The preferred path in this Cirrus namespace is to host Forge UI inside
-`saw-agent`, then expose it through a second saw-agent `Server` port and Route.
-This avoids requiring permission to create arbitrary Kubernetes Deployments and
-Services.
-
-When `forge_relay_enabled` is true, the VM-hosted preview also runs
-`forge-relay.service` on loopback and starts the Forge UI nginx container as a
-same-origin front door. `/api/*` and `/api/chat/ws` are proxied to the relay,
-and the relay connects southbound to the existing OpenClaw raw localhost
-forward. It does not deploy a Kubernetes Deployment, injector pod, or
-additional OpenClaw instance.
-
-The Forge UI and Forge relay images must be pullable by rootless Podman from
-inside saw-agent. The example vars default to the AMD64 images published for the
-VM-hosted preview:
-
-```text
-quay.io/rcook/rh-forge-ui:demo1-amd64
-quay.io/rcook/rh-forge-ui-relay:demo1-amd64
-```
-
-If either image is private, configure rootless Podman auth for the `openshell`
-user before enabling the service, or temporarily make the repository public
-while validating the preview. The relay gateway token and relay device identity
-are generated on the VM and stored under `/home/openshell/.config/forge-ui`;
-they are not stored in the repository.
-
-Deploy the VM-hosted route after `Server/saw-agent` has been applied:
-
-```bash
-cd cloud-init
-
-export NS='rh-vm-test1'
-
-perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-forge-ui-route.yml | oc apply -f -
-
-oc -n "$NS" get route saw-agent-forge-ui \
-  -o jsonpath='https://{.spec.host}{"\n"}'
-```
-
-Verify that the route is connected to the relay rather than serving only the
-static SPA fallback:
-
-```bash
-curl -skL "https://saw-agent-forge-ui.${NS}.dal.dev.cirrus.ibm.com/api/config" | jq .
-curl -skL "https://saw-agent-forge-ui.${NS}.dal.dev.cirrus.ibm.com/api/status" | jq .
-```
-
-`/api/config` should return `target: "relay"`. `/api/status` should report the
-relay's OpenClaw gateway state.
-
-The VM-hosted Forge UI route host is:
-
-```text
-saw-agent-forge-ui.<namespace>.dal.dev.cirrus.ibm.com
-```
-
-The existing OpenClaw route remains:
+Forge UI is not deployed by this two-VM cloud-init flow. The `saw-agent` VM
+exposes only the authenticated OpenClaw route and internal provisioning
+diagnostics. Deploy Forge UI through the separate demo/UI orchestration, then
+point it at this OpenClaw endpoint if needed:
 
 ```text
 https://saw-agent-userport.<namespace>.dal.dev.cirrus.ibm.com/
-```
-
-Remove only the VM-hosted Forge UI route with:
-
-```bash
-perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-forge-ui-route.yml | oc delete -f -
-```
-
-## Optional Kubernetes Deployment-hosted Forge UI-only preview
-
-This path is useful only when the operator has permission to create normal
-Kubernetes `Deployment`, `Service`, and `ServiceAccount` resources in the
-namespace. In the observed Cirrus namespace, the VM/Server route above is the
-path that matches the available permissions.
-
-The Forge UI can be exposed beside the current OpenClaw route before relay,
-gateway-token, or OpenClaw replacement work is enabled. This preview deploys
-only the static UI container. A disconnected relay/gateway state in the page is
-expected until the relay integration is added later.
-
-The UI image must already exist in the OpenShift internal registry as
-`image-registry.openshift-image-registry.svc:5000/${NS}/rh-forge-ui:demo1`.
-This repository does not build that image in the UI-only step.
-
-The side-by-side Forge UI route host is:
-
-```text
-rh-forge-ui.<namespace>.dal.dev.cirrus.ibm.com
-```
-
-```bash
-cd cloud-init
-
-export NS='rh-vm-test1'
-
-perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/forge-ui-ui-only.yml | oc apply -f -
-
-oc -n "$NS" rollout status deployment/rh-forge-ui --timeout=5m
-oc -n "$NS" get route rh-forge-ui \
-  -o jsonpath='https://{.spec.host}{"\n"}'
-```
-
-The existing OpenClaw route remains:
-
-```text
-https://saw-agent-userport.<namespace>.dal.dev.cirrus.ibm.com/
-```
-
-Remove only the side-by-side UI preview with:
-
-```bash
-perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/forge-ui-ui-only.yml | oc delete -f -
 ```
 
 ## Experimental VM persistence

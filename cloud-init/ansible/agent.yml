@@ -31,18 +31,7 @@
     openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
-    forge_ui_enabled_cfg: "{{ forge_ui_enabled | default(false) }}"
-    forge_ui_port_cfg: "{{ forge_ui_port | default(18090) }}"
-    forge_ui_container_port_cfg: "{{ forge_ui_container_port | default(8080) }}"
-    forge_ui_image_cfg: "{{ forge_ui_image | default(\"\") }}"
-    forge_relay_enabled_cfg: "{{ forge_relay_enabled | default(false) }}"
-    forge_relay_image_cfg: "{{ forge_relay_image | default(\"\") }}"
-    forge_relay_port_cfg: "{{ forge_relay_port | default(18091) }}"
-    forge_gateway_proxy_port_cfg: "{{ forge_gateway_proxy_port | default(18092) }}"
-    forge_relay_user_cfg: "{{ forge_relay_user | default((openclaw_proxy_allowed_users | default(['alice']))[0]) }}"
-    forge_relay_identity_path: "{{ user_home }}/.config/forge-ui/relay-identity.json"
-    forge_gateway_token_path: "{{ user_home }}/.config/forge-ui/gateway-token"
-    forge_relay_store_dir: "{{ user_home }}/.local/share/forge-relay"
+    openclaw_gateway_token_path: "{{ user_home }}/.config/secure-agent-workspace/openclaw-gateway-token"
     openclaw_provider_config:
       api: openai-completions
       baseUrl: https://inference.local/v1
@@ -478,15 +467,7 @@
       environment: "{{ user_env }}"
       changed_when: true
 
-    - name: Validate Forge UI image when preview is enabled
-      ansible.builtin.assert:
-        that:
-          - forge_ui_image_cfg | length > 0
-          - not (forge_relay_enabled_cfg | bool) or (forge_relay_image_cfg | length > 0)
-        fail_msg: "forge_ui_image must be set when forge_ui_enabled is true"
-      when: forge_ui_enabled_cfg | bool
-
-    - name: Ensure user Forge UI runtime dirs exist
+    - name: Ensure user OpenClaw token runtime dirs exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -495,265 +476,25 @@
         mode: "0755"
       loop:
         - "{{ user_home }}/.config/systemd/user"
-        - "{{ user_home }}/.config/forge-ui"
+        - "{{ user_home }}/.config/secure-agent-workspace"
         - "{{ user_home }}/.local/bin"
-        - "{{ forge_relay_store_dir }}"
-      when: (forge_ui_enabled_cfg | bool) or (openclaw_demo_csb_enabled_cfg | bool)
+      when: openclaw_demo_csb_enabled_cfg | bool
 
-    - name: Generate persistent Forge relay gateway token
+    - name: Generate persistent OpenClaw gateway token
       ansible.builtin.command: >-
-        openssl rand -hex -out {{ forge_gateway_token_path }} 32
+        openssl rand -hex -out {{ openclaw_gateway_token_path }} 32
       args:
-        creates: "{{ forge_gateway_token_path }}"
-      when:
-        - (forge_ui_enabled_cfg | bool and forge_relay_enabled_cfg | bool) or (openclaw_demo_csb_enabled_cfg | bool)
+        creates: "{{ openclaw_gateway_token_path }}"
+      when: openclaw_demo_csb_enabled_cfg | bool
       no_log: true
 
-    - name: Protect persistent Forge relay gateway token
+    - name: Protect persistent OpenClaw gateway token
       ansible.builtin.file:
-        path: "{{ forge_gateway_token_path }}"
+        path: "{{ openclaw_gateway_token_path }}"
         owner: "{{ user_name }}"
         group: "{{ user_name }}"
         mode: "0600"
-      when:
-        - (forge_ui_enabled_cfg | bool and forge_relay_enabled_cfg | bool) or (openclaw_demo_csb_enabled_cfg | bool)
-
-    - name: Generate persistent Forge relay device identity
-      ansible.builtin.shell: |
-        set -euo pipefail
-        node - "{{ forge_relay_identity_path }}" <<'NODE'
-        const { createHash, generateKeyPairSync } = require('node:crypto');
-        const { writeFileSync } = require('node:fs');
-        const path = process.argv[2];
-        const { publicKey, privateKey } = generateKeyPairSync('ed25519');
-        const { x: publicKeyBase64Url } = publicKey.export({ format: 'jwk' });
-        const { d: privateKeyBase64Url } = privateKey.export({ format: 'jwk' });
-        const deviceId = createHash('sha256')
-          .update(Buffer.from(publicKeyBase64Url, 'base64url'))
-          .digest('hex');
-        const identity = {
-          version: 1,
-          deviceId,
-          publicKey: publicKeyBase64Url,
-          privateKey: privateKeyBase64Url,
-        };
-        writeFileSync(path, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
-        NODE
-      args:
-        executable: /bin/bash
-        creates: "{{ forge_relay_identity_path }}"
-      become_user: "{{ user_name }}"
-      environment: "{{ user_env }}"
-      when:
-        - forge_ui_enabled_cfg | bool
-        - forge_relay_enabled_cfg | bool
-      no_log: true
-
-    - name: Protect persistent Forge relay device identity
-      ansible.builtin.file:
-        path: "{{ forge_relay_identity_path }}"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0600"
-      when:
-        - forge_ui_enabled_cfg | bool
-        - forge_relay_enabled_cfg | bool
-
-    - name: Write Forge UI nginx relay front-door config
-      ansible.builtin.copy:
-        dest: "{{ user_home }}/.config/forge-ui/nginx.conf"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0644"
-        content: |
-          worker_processes auto;
-          error_log /var/log/nginx/error.log notice;
-          pid /tmp/nginx.pid;
-
-          include /usr/share/nginx/modules/*.conf;
-
-          events {
-              worker_connections 1024;
-          }
-
-          http {
-              include /etc/nginx/mime.types;
-              default_type application/octet-stream;
-              sendfile on;
-              keepalive_timeout 65;
-
-              map $http_upgrade $connection_upgrade {
-                  default upgrade;
-                  '' close;
-              }
-
-              server {
-                  listen {{ forge_ui_port_cfg }} default_server;
-                  listen [::]:{{ forge_ui_port_cfg }} default_server;
-                  server_name _;
-                  root /opt/app-root/src;
-                  index index.html;
-
-                  location /api/ {
-                      proxy_pass http://127.0.0.1:{{ forge_relay_port_cfg }};
-                      proxy_http_version 1.1;
-                      proxy_set_header Upgrade $http_upgrade;
-                      proxy_set_header Connection $connection_upgrade;
-                      proxy_set_header Host $host;
-                      proxy_set_header X-Real-IP $remote_addr;
-                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                      proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
-                      proxy_set_header X-Forwarded-User "{{ forge_relay_user_cfg }}";
-                      proxy_read_timeout 300s;
-                      proxy_send_timeout 300s;
-                      proxy_buffering off;
-                  }
-
-                  location / {
-                      try_files $uri $uri/ /index.html;
-                  }
-
-                  location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-                      expires 1y;
-                      add_header Cache-Control "public, no-transform";
-                      add_header X-Frame-Options "SAMEORIGIN" always;
-                      add_header X-Content-Type-Options "nosniff" always;
-                      add_header X-XSS-Protection "1; mode=block" always;
-                      add_header Referrer-Policy "no-referrer-when-downgrade" always;
-                  }
-              }
-
-              server {
-                  listen 127.0.0.1:{{ forge_gateway_proxy_port_cfg }};
-                  server_name _;
-
-                  location / {
-                      proxy_pass http://127.0.0.1:{{ openclaw_forward_port_cfg }};
-                      proxy_http_version 1.1;
-                      proxy_set_header Upgrade $http_upgrade;
-                      proxy_set_header Connection $connection_upgrade;
-                      proxy_set_header Host $host;
-                      proxy_set_header X-Real-IP 127.0.0.1;
-                      proxy_set_header X-Forwarded-For 127.0.0.1;
-                      proxy_set_header X-Forwarded-Proto http;
-                      proxy_set_header X-Forwarded-Host saw-agent-forge-relay.local;
-                      proxy_set_header X-Forwarded-Preferred-Username "{{ forge_relay_user_cfg }}";
-                      proxy_read_timeout 300s;
-                      proxy_send_timeout 300s;
-                      proxy_buffering off;
-                  }
-              }
-          }
-      when:
-        - forge_ui_enabled_cfg | bool
-        - forge_relay_enabled_cfg | bool
-
-    - name: Write Forge relay launch script
-      ansible.builtin.copy:
-        dest: "{{ user_home }}/.local/bin/start-forge-relay"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0755"
-        content: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          podman pull "{{ forge_relay_image_cfg }}"
-          podman rm -f forge-relay >/dev/null 2>&1 || true
-
-          gateway_token="$(cat "{{ forge_gateway_token_path }}")"
-
-          exec podman run --rm --name forge-relay \
-            --network host \
-            -e FORGE_RELAY_HOST=127.0.0.1 \
-            -e FORGE_RELAY_PORT={{ forge_relay_port_cfg }} \
-            -e FORGE_GATEWAY_URL=ws://127.0.0.1:{{ forge_gateway_proxy_port_cfg }} \
-            -e FORGE_GATEWAY_TOKEN="${gateway_token}" \
-            -e FORGE_RELAY_IDENTITY_FILE=/var/lib/forge/identity.json \
-            -e FORGE_STORE_DIR=/var/lib/forge-store \
-            -e FORGE_ADVISOR_AGENT_ID=default \
-            -e FORGE_USER_HEADER=x-forwarded-user \
-            -v "{{ forge_relay_identity_path }}:/var/lib/forge/identity.json:ro,z" \
-            -v "{{ forge_relay_store_dir }}:/var/lib/forge-store:z" \
-            "{{ forge_relay_image_cfg }}"
-      when:
-        - forge_ui_enabled_cfg | bool
-        - forge_relay_enabled_cfg | bool
-
-    - name: Write Forge relay systemd user unit
-      ansible.builtin.copy:
-        dest: "{{ user_home }}/.config/systemd/user/forge-relay.service"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Forge relay for VM-hosted Forge UI
-          Requires=openclaw-forward.service
-          Requires=forge-ui.service
-          After=openclaw-forward.service forge-ui.service
-          PartOf=openclaw-sandbox.service
-
-          [Service]
-          Type=simple
-          ExecStart=%h/.local/bin/start-forge-relay
-          ExecStop=/usr/bin/podman stop -t 5 forge-relay
-          Restart=on-failure
-          RestartSec=5s
-
-          [Install]
-          WantedBy=default.target
-      when:
-        - forge_ui_enabled_cfg | bool
-        - forge_relay_enabled_cfg | bool
-
-    - name: Write Forge UI launch script
-      ansible.builtin.copy:
-        dest: "{{ user_home }}/.local/bin/start-forge-ui"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0755"
-        content: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          podman pull "{{ forge_ui_image_cfg }}"
-          podman rm -f forge-ui >/dev/null 2>&1 || true
-
-          {% if forge_relay_enabled_cfg | bool %}
-          exec podman run --rm --name forge-ui \
-            --network host \
-            -v "{{ user_home }}/.config/forge-ui/nginx.conf:/etc/nginx/nginx.conf:ro,z" \
-            "{{ forge_ui_image_cfg }}"
-          {% else %}
-          exec podman run --rm --name forge-ui \
-            -p 0.0.0.0:{{ forge_ui_port_cfg }}:{{ forge_ui_container_port_cfg }} \
-            "{{ forge_ui_image_cfg }}"
-          {% endif %}
-      when: forge_ui_enabled_cfg | bool
-
-    - name: Write Forge UI systemd user unit
-      ansible.builtin.copy:
-        dest: "{{ user_home }}/.config/systemd/user/forge-ui.service"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Forge UI side-by-side preview
-          After=podman.socket
-          Wants=podman.socket
-
-          [Service]
-          Type=simple
-          ExecStart=%h/.local/bin/start-forge-ui
-          ExecStop=/usr/bin/podman stop -t 5 forge-ui
-          Restart=on-failure
-          RestartSec=5s
-
-          [Install]
-          WantedBy=default.target
-      when: forge_ui_enabled_cfg | bool
+      when: openclaw_demo_csb_enabled_cfg | bool
 
     # === [2/8] Gateway config files (env, toml, systemd unit) ===
     - name: Ensure /etc/openshell exists
@@ -1205,6 +946,7 @@
               /usr/bin/podman unshare /usr/bin/chown -R {{ openclaw_sandbox_uid_cfg }}:{{ openclaw_sandbox_gid_cfg }} "${volume_path}"
               /usr/bin/podman unshare /usr/bin/chmod 0700 "${volume_path}"
               driver_config_json='{"podman":{"mounts":[{"type":"volume","source":"{{ openclaw_demo_podman_volume }}","target":"/sandbox/persist","read_only":false}]}}'
+              gateway_token="$(cat "{{ openclaw_gateway_token_path }}")"
               {% else %}
               driver_config_json='{"podman":{"mounts":[{"type":"bind","source":"{{ openclaw_home_host_path }}","target":"/sandbox/.openclaw","read_only":false,"selinux_label":"shared"}]}}'
               {% endif %}
@@ -1228,7 +970,15 @@
               fi
 
               if [ "${sandbox_state}" = "Ready" ]; then
+                {% if openclaw_demo_csb_enabled_cfg | bool %}
+                if /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
+                  /bin/sh -c 'curl -fsS http://127.0.0.1:18789/healthz >/dev/null 2>&1'; then
+                  exit 0
+                fi
+                echo "OpenClaw sandbox is Ready but the demo gateway is unhealthy; replacing it" >&2
+                {% else %}
                 exit 0
+                {% endif %}
               fi
 
               if [ -n "${sandbox_state}" ]; then
@@ -1257,7 +1007,48 @@
                     --no-tty \
                     --memory 12Gi \
                     --provider {{ inference_provider_name }} \
+                    {% if openclaw_demo_csb_enabled_cfg | bool %}
+                    --env OPENCLAW_GATEWAY_TOKEN="${gateway_token}" \
+                    --env OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw \
+                    --env OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace \
+                    --env OPENCLAW_NO_RESPAWN=1 \
+                    --env NODE_DISABLE_COMPILE_CACHE=1 \
+                    --env OPENCLAW_WIDGET_PORT=18790 \
+                    --env OPENCLAW_PUBLIC_URL={{ openclaw_route_origin_cfg }} \
+                    --env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }} \
+                    --env OPENCLAW_PROVIDERS='{{ openclaw_providers_json }}' \
+                    -- /bin/sh -lc '
+                      set -eu
+                      export HOME=/sandbox
+                      export OPENCLAW_HOME=/sandbox
+                      export OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw
+                      export OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace
+                      export NODE_DISABLE_COMPILE_CACHE=1
+                      export SQLITE_TMPDIR=/tmp
+                      export TMPDIR=/tmp
+                      mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
+                      node /tmp/bootstrap-openclaw-beta2-db.mjs
+                      node - <<NODE >/tmp/openclaw-forward-port-bridge.log 2>&1 &
+                      const net = require("node:net");
+                      const server = net.createServer((client) => {
+                        const upstream = net.connect(18789, "127.0.0.1");
+                        client.on("error", () => upstream.destroy());
+                        upstream.on("error", () => client.destroy());
+                        client.pipe(upstream);
+                        upstream.pipe(client);
+                      });
+                      server.on("error", (err) => {
+                        if (err && err.code === "EADDRINUSE") process.exit(0);
+                        console.error(err);
+                        process.exit(1);
+                      });
+                      server.listen({ host: "127.0.0.1", port: {{ openclaw_forward_port_cfg }} });
+NODE
+                      exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1
+                    '
+                    {% else %}
                     -- /bin/sh -c "echo sandbox-ready"
+                    {% endif %}
                 fi
 
                 /usr/local/bin/openshell sandbox create \
@@ -1271,7 +1062,48 @@
                   --no-tty \
                   --memory 12Gi \
                   --provider {{ inference_provider_name }} \
+                  {% if openclaw_demo_csb_enabled_cfg | bool %}
+                  --env OPENCLAW_GATEWAY_TOKEN="${gateway_token}" \
+                  --env OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw \
+                  --env OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace \
+                  --env OPENCLAW_NO_RESPAWN=1 \
+                  --env NODE_DISABLE_COMPILE_CACHE=1 \
+                  --env OPENCLAW_WIDGET_PORT=18790 \
+                  --env OPENCLAW_PUBLIC_URL={{ openclaw_route_origin_cfg }} \
+                  --env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }} \
+                  --env OPENCLAW_PROVIDERS='{{ openclaw_providers_json }}' \
+                  -- /bin/sh -lc '
+                    set -eu
+                    export HOME=/sandbox
+                    export OPENCLAW_HOME=/sandbox
+                    export OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw
+                    export OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace
+                    export NODE_DISABLE_COMPILE_CACHE=1
+                    export SQLITE_TMPDIR=/tmp
+                    export TMPDIR=/tmp
+                    mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
+                    node /tmp/bootstrap-openclaw-beta2-db.mjs
+                    node - <<NODE >/tmp/openclaw-forward-port-bridge.log 2>&1 &
+                    const net = require("node:net");
+                    const server = net.createServer((client) => {
+                      const upstream = net.connect(18789, "127.0.0.1");
+                      client.on("error", () => upstream.destroy());
+                      upstream.on("error", () => client.destroy());
+                      client.pipe(upstream);
+                      upstream.pipe(client);
+                    });
+                    server.on("error", (err) => {
+                      if (err && err.code === "EADDRINUSE") process.exit(0);
+                      console.error(err);
+                      process.exit(1);
+                    });
+                    server.listen({ host: "127.0.0.1", port: {{ openclaw_forward_port_cfg }} });
+NODE
+                    exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1
+                  ' && exit 0
+                  {% else %}
                   -- /bin/sh -c "echo sandbox-ready" && exit 0
+                  {% endif %}
                 /usr/bin/sleep 5
               done
 
@@ -1284,11 +1116,16 @@
               Description=OpenClaw gateway (openshell-managed sandbox)
 
               [Service]
-              Type=oneshot
+              Type={% if openclaw_demo_csb_enabled_cfg | bool %}simple{% else %}oneshot{% endif %}
               Environment=OPENSHELL_GATEWAY=openshell-local
               Environment=NO_COLOR=1
               ExecStart=%h/.local/bin/ensure-openclaw-sandbox
+              {% if openclaw_demo_csb_enabled_cfg | bool %}
+              Restart=on-failure
+              RestartSec=5
+              {% else %}
               RemainAfterExit=true
+              {% endif %}
               TimeoutStopSec=60s
 
               [Install]
@@ -1303,73 +1140,25 @@
               set -euo pipefail
 
               export OPENSHELL_GATEWAY=openshell-local
-              gateway_token="$(cat "{{ forge_gateway_token_path }}")"
+              gateway_token="$(cat "{{ openclaw_gateway_token_path }}")"
 
+              {% if openclaw_demo_csb_enabled_cfg | bool %}
+              for attempt in $(/usr/bin/seq 1 60); do
+                if /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
+                  /bin/sh -c 'curl -fsS http://127.0.0.1:18789/healthz >/dev/null 2>&1'; then
+                  exit 0
+                fi
+                /usr/bin/sleep 2
+              done
+
+              echo "OpenClaw demo gateway did not become healthy inside sandbox" >&2
+              /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
+                /bin/sh -c 'tail -n 240 /tmp/openclaw-gateway.log 2>/dev/null || true' >&2 || true
+              exit 1
+              {% else %}
               exec /usr/local/bin/openshell sandbox exec \
                 --name {{ sandbox_name }} \
                 --no-tty \
-                {% if openclaw_demo_csb_enabled_cfg | bool %}
-                --env OPENCLAW_GATEWAY_TOKEN="${gateway_token}" \
-                --env OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw \
-                --env OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace \
-                --env OPENCLAW_NO_RESPAWN=1 \
-                --env NODE_DISABLE_COMPILE_CACHE=1 \
-                --env OPENCLAW_WIDGET_PORT=18790 \
-                --env OPENCLAW_PUBLIC_URL={{ openclaw_route_origin_cfg }} \
-                --env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }} \
-                --env OPENCLAW_PROVIDERS='{{ openclaw_providers_json }}' \
-                -- /bin/sh -c '
-                  set -eu
-                  export HOME=/sandbox
-                  export OPENCLAW_HOME=/sandbox
-                  export NODE_DISABLE_COMPILE_CACHE=1
-                  export SQLITE_TMPDIR=/tmp
-                  export TMPDIR=/tmp
-                  mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
-
-                  node /tmp/bootstrap-openclaw-beta2-db.mjs
-
-                  if [ -x /app/entrypoint.sh ]; then
-                    /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &
-                    gateway_pid=$!
-                  elif [ -x /usr/local/bin/entrypoint.sh ]; then
-                    /usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &
-                    gateway_pid=$!
-                  else
-                    mkdir -p "${OPENCLAW_STATE_DIR}" "${OPENCLAW_WORKSPACE_DIR}"
-                    openclaw config set gateway.mode local
-                    openclaw config set gateway.bind lan
-                    openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
-                    openclaw config set gateway.controlUi.allowedOrigins "[\"{{ openclaw_route_origin_cfg }}\",\"http://localhost:18789\",\"http://127.0.0.1:18789\"]" --strict-json
-                    openclaw config set models.providers "{{ openclaw_providers_json }}" --strict-json
-                    openclaw config set agents.defaults.model.primary "{{ inference_provider_cfg }}/{{ inference_model_cfg }}"
-                    openclaw config set agents.defaults.models "{\"{{ inference_provider_cfg }}/{{ inference_model_cfg }}\":{}}" --strict-json --replace
-                    openclaw config validate --json
-                    openclaw gateway run \
-                      --allow-unconfigured \
-                      --bind lan \
-                      --port {{ openclaw_forward_port_cfg }} \
-                      >/tmp/openclaw-gateway.log 2>&1 </dev/null &
-                    gateway_pid=$!
-                  fi
-
-                  for attempt in $(seq 1 60); do
-                    if node -e 'fetch("http://127.0.0.1:{{ openclaw_forward_port_cfg }}/ready").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then
-                      exit 0
-                    fi
-                    if ! kill -0 "${gateway_pid}" 2>/dev/null; then
-                      echo "OpenClaw demo gateway exited before readiness" >&2
-                      sed -n "1,240p" /tmp/openclaw-gateway.log >&2 || true
-                      exit 1
-                    fi
-                    sleep 2
-                  done
-
-                  echo "OpenClaw demo gateway did not become ready" >&2
-                  sed -n "1,240p" /tmp/openclaw-gateway.log >&2 || true
-                  exit 1
-                ' </dev/null
-                {% else %}
                 --env CUSTOM_API_KEY=proxy-managed \
                 -- /bin/sh -c '
                   set -eu
@@ -1412,7 +1201,7 @@
                     --port {{ openclaw_forward_port_cfg }} \
                     >/tmp/openclaw-gateway.log 2>&1 </dev/null &
                 ' </dev/null
-                {% endif %}
+              {% endif %}
 
         - name: Write openclaw gateway systemd user unit
           ansible.builtin.copy:
@@ -1745,126 +1534,6 @@
                 msg: >-
                   OpenClaw gateway did not become healthy on raw localhost
                   forward port {{ openclaw_forward_port_cfg }}.
-
-        - name: Start and verify Forge UI preview
-          when: forge_ui_enabled_cfg | bool
-          block:
-            - name: Enable + start Forge relay when configured
-              ansible.builtin.systemd:
-                name: forge-ui.service
-                scope: user
-                enabled: true
-                state: started
-                daemon_reload: true
-
-            - name: Wait for Forge UI readiness
-              ansible.builtin.uri:
-                url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/"
-                status_code: [200]
-              register: forge_ui_health
-              until: forge_ui_health.status == 200
-              retries: 20
-              delay: 3
-
-            - name: Enable + start Forge relay when configured
-              ansible.builtin.systemd:
-                name: forge-relay.service
-                scope: user
-                enabled: true
-                state: started
-                daemon_reload: true
-              when: forge_relay_enabled_cfg | bool
-
-            - name: Wait for Forge relay readiness
-              ansible.builtin.uri:
-                url: "http://127.0.0.1:{{ forge_relay_port_cfg }}/healthz"
-                status_code: [200]
-              register: forge_relay_health
-              until: forge_relay_health.status == 200
-              retries: 20
-              delay: 3
-              when: forge_relay_enabled_cfg | bool
-
-            - name: Wait for Forge UI relay config readiness
-              ansible.builtin.uri:
-                url: "http://127.0.0.1:{{ forge_ui_port_cfg }}/api/config"
-                status_code: [200]
-                return_content: true
-              register: forge_ui_relay_config
-              until: >-
-                forge_ui_relay_config.status == 200 and
-                (forge_ui_relay_config.json.target | default('')) == 'relay'
-              retries: 20
-              delay: 3
-              when: forge_relay_enabled_cfg | bool
-          rescue:
-            - name: Read Forge UI and relay service status
-              ansible.builtin.command: >-
-                systemctl --user status
-                forge-ui.service
-                forge-relay.service
-                --no-pager -l
-              register: forge_ui_service_status
-              changed_when: false
-              failed_when: false
-
-            - name: Read Forge UI and relay service journal
-              ansible.builtin.command: >-
-                journalctl --user
-                -u forge-ui.service
-                -u forge-relay.service
-                -n 180 --no-pager -o cat
-              register: forge_ui_service_journal
-              changed_when: false
-              failed_when: false
-
-            - name: Inspect Forge UI podman containers
-              ansible.builtin.command: >-
-                podman ps -a
-                --filter name=forge-ui
-                --filter name=forge-relay
-                --no-trunc
-              register: forge_ui_podman_ps
-              changed_when: false
-              failed_when: false
-
-            - name: Read Forge UI podman logs
-              ansible.builtin.command: podman logs forge-ui --tail 160
-              register: forge_ui_podman_logs
-              changed_when: false
-              failed_when: false
-
-            - name: Read Forge relay podman logs
-              ansible.builtin.command: podman logs forge-relay --tail 160
-              register: forge_relay_podman_logs
-              changed_when: false
-              failed_when: false
-              when: forge_relay_enabled_cfg | bool
-
-            - name: Display Forge UI and relay service status
-              ansible.builtin.debug:
-                var: forge_ui_service_status.stdout_lines
-
-            - name: Display Forge UI and relay service journal
-              ansible.builtin.debug:
-                var: forge_ui_service_journal.stdout_lines
-
-            - name: Display Forge UI podman container inspection
-              ansible.builtin.debug:
-                var: forge_ui_podman_ps.stdout_lines
-
-            - name: Display Forge UI podman logs
-              ansible.builtin.debug:
-                var: forge_ui_podman_logs.stdout_lines
-
-            - name: Display Forge relay podman logs
-              ansible.builtin.debug:
-                var: forge_relay_podman_logs.stdout_lines
-              when: forge_relay_enabled_cfg | bool
-
-            - name: Fail provisioning after Forge UI diagnostics
-              ansible.builtin.fail:
-                msg: "Forge UI preview did not become ready on port {{ forge_ui_port_cfg }}."
 
     - name: Provisioning complete
       ansible.builtin.debug:

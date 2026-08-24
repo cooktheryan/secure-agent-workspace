@@ -28,9 +28,9 @@ PR #6 changes the target from the older two-VM README into a stricter
 
 - Demo images are selected with `:demo1` tags, imported into the OpenShift
   internal registry, and resolved to immutable digests before use.
-- The normal path imports seven credential-free runtime/proxy images from
-  `quay.io/redhat-et/*:demo1`; only Forge UI and Forge relay are built
-  in-cluster.
+- The normal path imports credential-free runtime/proxy images from
+  `quay.io/redhat-et/*:demo1`; Forge UI is handled by separate demo/UI
+  orchestration, not by the saw-agent VM.
 - OpenShell gateway, supervisor, and CLI are pinned to `0.0.110` and verified
   on both VMs after setup.
 - OpenAI-compatible inference moves behind Gateway B / the integrations VM on
@@ -239,35 +239,12 @@ daily-briefing skill installed into OpenClaw backend ID `default`.
 - [ ] Ensure Home starts empty and offers "Run daily briefing" rather than
   generating fixture drafts or silently starting provider workflows.
 
-### Forge UI and relay
+### Forge UI boundary
 
-PR #6 treats Forge UI and relay as part of the full demo. They are built
-inside OpenShift and remain private in the namespace internal registry.
-
-- [x] Add a UI-only Forge route for side-by-side preview without relay,
-  injector, OpenClaw gateway token, or OpenClaw route replacement.
-  - Manifest: `cloud-init/kubernetes/forge-ui-ui-only.yml`
-  - Route: `rh-forge-ui.${NS}.dal.dev.cirrus.ibm.com`
-  - Expected first-step limitation: the static UI may report disconnected relay
-    or gateway state until the relay integration is added.
-- [x] Add a VM-hosted Forge UI route for namespaces where the operator can
-  create Cirrus Server ports/routes but cannot create normal Deployment and
-  Service resources.
-  - Manifest: `cloud-init/kubernetes/agent-forge-ui-route.yml`
-  - saw-agent port: `forgeui` / `18090`
-  - Route: `saw-agent-forge-ui.${NS}.dal.dev.cirrus.ibm.com`
-  - Ansible units: `forge-ui.service`, `forge-relay.service`
-- [ ] Decide whether Forge UI build orchestration belongs in this SAW branch or
-  stays in the demo repo orchestration.
-- [x] If included here, add deploy flow for externally built VM-hosted images:
-  - `rh-forge-ui`
-  - `rh-forge-ui-relay`
-- [x] Store the OpenClaw gateway token for the VM-hosted relay without printing it.
-- [x] Add route validation for the Forge UI relay API.
-- [ ] Document that the PoC demo header injector is not a production
-  authentication boundary.
-- [x] Ensure relay state and outbox state are PVC-backed and contain no real
-  provider credentials.
+Forge UI is intentionally outside this saw-agent cloud-init path. This branch
+does not deploy Forge UI routes, saw-agent ports, containers, or user services.
+Use the separate demo/UI orchestration to host Forge UI remotely and point it at
+the authenticated OpenClaw route when needed.
 
 ## Suggested implementation order
 
@@ -292,8 +269,8 @@ inside OpenShift and remain private in the namespace internal registry.
    non-reboot checks are stable.
 10. Revisit OpenClaw `2026.8.1-beta.2` only through the PR #6 internal-image
     flow or a fixed image that passes `openclaw --version` under direct Podman.
-11. Decide on daily briefing and Forge UI as separate checkpoints if they stay
-    in this repository.
+11. Keep Forge UI as a separate remotely deployed checkpoint outside this
+    saw-agent VM flow.
 
 ## Validation gate for every checked item
 

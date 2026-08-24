@@ -67,6 +67,7 @@ Feature: saw-agent persistent OpenClaw state
       And the gateway launch disables the Node compile cache
       And the gateway launch binds to the raw forward port
       And the gateway launcher waits until the demo gateway is ready
+      And the demo gateway is bridged from its fixed sandbox port to the raw forward port
 
   Rule: If saw-agent has a persisted non-Ready OpenClaw sandbox, then the agent playbook shall replace it before creating the gateway sandbox.
 

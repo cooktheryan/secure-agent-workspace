@@ -8,8 +8,7 @@ It assumes the branch or PR contains the `cloud-init/` assets for:
 - `saw-integ`: the integration VM that hosts the OpenAI-compatible HTTPS
   inference proxy.
 - `saw-agent`: the agent VM that hosts OpenShell, the OpenClaw sandbox,
-  the authenticated OpenClaw route, persistent OpenClaw state, and the optional
-  VM-hosted Forge UI preview.
+  the authenticated OpenClaw route, and persistent OpenClaw state.
 
 The detailed secret schema and reference-name notes live in
 [`cloud-init/README.md`](../cloud-init/README.md). This file is the shorter
@@ -29,7 +28,6 @@ Default OpenShift/Cirrus resources:
 | Agent assets/container PVC | `saw-agent-assets-persist` |
 | Integration persistence PVC | `saw-integ-persist` |
 | OpenClaw browser Route | `Route/saw-agent-userport` |
-| Optional Forge UI Route | `Route/saw-agent-forge-ui` |
 | OpenClaw sandbox name | `openclaw-saw` |
 
 Expected PVC sizing used during validation:
@@ -165,9 +163,8 @@ Create Routes after `Service/saw-agent` exists:
 
 ```bash
 perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-userport-route.yml | oc apply -f -
-perl -pe 's/\$\{NS\}/$ENV{NS}/g' kubernetes/agent-forge-ui-route.yml | oc apply -f -
 
-oc -n "$NS" get route saw-agent-userport saw-agent-forge-ui
+oc -n "$NS" get route saw-agent-userport
 ```
 
 ## 6. Provisioning verification
@@ -196,7 +193,7 @@ Successful saw-agent indicators:
 
 ```bash
 systemctl status saw-provision.service --no-pager -l
-ss -ltnp | grep -E '18788|18789|17670|18090|18091|18092' || true
+ss -ltnp | grep -E '18788|18789|17670' || true
 curl -sS -i http://127.0.0.1:18789/ready | sed -n '1,40p'
 ```
 
@@ -205,10 +202,6 @@ Expected listeners:
 - `0.0.0.0:17670`: OpenShell gateway.
 - `127.0.0.1:18788`: raw OpenClaw forward.
 - `*:18789`: authenticated OpenClaw proxy.
-- Optional Forge UI:
-  - `0.0.0.0:18090`: Forge UI nginx front door.
-  - `127.0.0.1:18091`: Forge relay.
-  - `127.0.0.1:18092`: relay-local OpenClaw proxy.
 
 Expected OpenClaw readiness:
 
@@ -262,27 +255,10 @@ simple question. The response proves:
 4. OpenClaw → saw-integ Service DNS works.
 5. saw-integ → upstream model works.
 
-## 8. Optional Forge UI verification
+## 8. Forge UI boundary
 
-Open:
-
-```text
-https://saw-agent-forge-ui.<namespace>.dal.dev.cirrus.ibm.com/workspace
-```
-
-From saw-agent:
-
-```bash
-curl -sS http://127.0.0.1:18090/api/config | jq .
-curl -sS http://127.0.0.1:18091/api/status | jq .
-curl -sS -i http://127.0.0.1:18092/ready | sed -n '1,60p'
-```
-
-Expected:
-
-- `/api/config` reports `target: "relay"`.
-- `/api/status` does not report the OpenClaw gateway as unreachable.
-- `18092/ready` returns OpenClaw readiness through the relay-local proxy.
+Forge UI is deployed outside this two-VM cloud-init flow. The `saw-agent` VM
+does not expose Forge UI ports, routes, containers, or systemd units.
 
 ## 9. Safe rerun without recreating VMs
 
@@ -402,6 +378,3 @@ Before asking for review:
 - `saw-agent` local `/ready` returns `HTTP/1.1 200 OK`.
 - Browser login works through `saw-agent-userport`.
 - A simple OpenClaw prompt reaches the configured model.
-- Optional Forge UI route returns relay-backed `/api/config` and `/api/status`
-  if Forge UI is enabled.
-

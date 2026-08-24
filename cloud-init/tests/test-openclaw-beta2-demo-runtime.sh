@@ -34,30 +34,30 @@ grep -Fq -- '--env OPENCLAW_NO_RESPAWN=1' "$agent_playbook"
 grep -Fq -- '--env NODE_DISABLE_COMPILE_CACHE=1' "$agent_playbook"
 grep -Fq -- '--env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }}' "$agent_playbook"
 grep -Fq -- '--env OPENCLAW_PROVIDERS=' "$agent_playbook"
+grep -Fq 'export OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw' "$agent_playbook"
+grep -Fq 'export OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace' "$agent_playbook"
 grep -Fq 'export NODE_DISABLE_COMPILE_CACHE=1' "$agent_playbook"
 grep -Fq 'node /tmp/bootstrap-openclaw-beta2-db.mjs' "$agent_playbook"
 if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook"; then
   echo "beta2 startup must not gate on openclaw --version because this image can exit 137 before gateway launch" >&2
   exit 1
 fi
-grep -Fq 'if [ -x /app/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq '/app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
-grep -Fq 'elif [ -x /usr/local/bin/entrypoint.sh ]; then' "$agent_playbook"
-grep -Fq '/usr/local/bin/entrypoint.sh openclaw gateway run >/tmp/openclaw-gateway.log 2>&1 </dev/null &' "$agent_playbook"
-grep -Fq 'openclaw gateway run \' "$agent_playbook"
-grep -Fq 'gateway_pid=$!' "$agent_playbook"
-grep -Fq 'fetch("http://127.0.0.1:{{ openclaw_forward_port_cfg }}/ready")' "$agent_playbook"
-grep -Fq 'OpenClaw demo gateway did not become ready' "$agent_playbook"
-grep -Fq 'Type=oneshot' "$agent_playbook"
-grep -Fq 'RemainAfterExit=true' "$agent_playbook"
-if grep -Fq '/app/entrypoint.sh \' "$agent_playbook"; then
-  echo "demo CSB entrypoint must be launched directly; it does not consume legacy gateway args" >&2
-  exit 1
-fi
+grep -Fq 'exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1' "$agent_playbook"
+grep -Fq "net.connect(18789, \"127.0.0.1\")" "$agent_playbook"
+grep -Fq "server.listen({ host: \"127.0.0.1\", port: {{ openclaw_forward_port_cfg }} })" "$agent_playbook"
+grep -Fq "curl -fsS http://127.0.0.1:18789/healthz" "$agent_playbook"
+grep -Fq 'OpenClaw sandbox is Ready but the demo gateway is unhealthy; replacing it' "$agent_playbook"
 openclaw_runtime_block="$(awk '/Write reference-aligned OpenClaw launch script/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
-if grep -Fq 'Type=simple' <<<"$openclaw_runtime_block"; then
-  echo "demo CSB gateway unit must be a readiness-checked launcher, not a foreground wrapper" >&2
+if grep -Fq 'gateway_pid=$!' <<<"$openclaw_runtime_block"; then
+  echo "demo CSB gateway must stay in the foreground; backgrounding lets OpenShell reap the gateway" >&2
   exit 1
 fi
+grep -Fq 'OpenClaw demo gateway did not become healthy inside sandbox' <<<"$openclaw_runtime_block"
+gateway_unit_block="$(awk '/Write openclaw gateway systemd user unit/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
+grep -Fq 'Type=oneshot' <<<"$gateway_unit_block"
+grep -Fq 'RemainAfterExit=true' <<<"$gateway_unit_block"
+sandbox_unit_block="$(awk '/Write openclaw sandbox systemd user unit/{in_block=1} in_block{print} in_block && /WantedBy=default.target/{exit}' "$agent_playbook")"
+grep -Fq 'Type={% if openclaw_demo_csb_enabled_cfg | bool %}simple{% else %}oneshot{% endif %}' <<<"$sandbox_unit_block"
+grep -Fq 'Restart=on-failure' <<<"$sandbox_unit_block"
 
 echo "OpenClaw beta2 demo runtime contract is baked into saw-agent provisioning"
