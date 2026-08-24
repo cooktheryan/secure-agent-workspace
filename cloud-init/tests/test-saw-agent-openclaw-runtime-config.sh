@@ -25,6 +25,11 @@ grep -Fq "'allowUsers': (openclaw_proxy_allowed_users | mandatory)" "$agent_play
 grep -Fq "'allowLoopback': true" "$agent_playbook"
 grep -Fq "'trustedProxies': ['127.0.0.1', '::1']" "$agent_playbook"
 grep -Fq "'allowedOrigins': [openclaw_route_origin_cfg]" "$agent_playbook"
+grep -Fq "url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/ready" "$agent_playbook"
+if grep -Fq "url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/health" "$agent_playbook"; then
+  echo "OpenClaw gateway verifier must use the observed /ready endpoint, not /health" >&2
+  exit 1
+fi
 
 auth_proxy_unit="$(awk '/Description=Keycloak-authenticated OpenClaw proxy/{in_unit=1} in_unit{print} in_unit && /WantedBy=default.target/{exit}' "$agent_playbook")"
 grep -Fq "After=openclaw-forward.service" <<<"$auth_proxy_unit"

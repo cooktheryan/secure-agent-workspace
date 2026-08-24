@@ -1255,15 +1255,15 @@
                   OpenClaw auth proxy did not become ready on port
                   {{ openclaw_proxy_port_cfg }}.
 
-        - name: Verify openclaw gateway health with failure diagnostics
+        - name: Verify openclaw gateway readiness with failure diagnostics
           block:
-            - name: Wait for openclaw gateway health through raw localhost forward
+            - name: Wait for openclaw gateway readiness through raw localhost forward
               ansible.builtin.uri:
-                url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/health
+                url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/ready
                 status_code: [200]
                 return_content: true
               register: openclaw_health
-              until: openclaw_health.status == 200 and 'ok' in (openclaw_health.content | default(''))
+              until: openclaw_health.status == 200
               retries: 30
               delay: 5
           rescue:
@@ -1282,7 +1282,7 @@
             - name: Fail provisioning after OpenClaw diagnostics
               ansible.builtin.fail:
                 msg: >-
-                  OpenClaw gateway did not become healthy on raw localhost
+                  OpenClaw gateway did not become ready on raw localhost
                   forward port {{ openclaw_forward_port_cfg }}.
 
     - name: Provisioning complete
