@@ -1,0 +1,35 @@
+apiVersion: saw.redhat.com/v1alpha1
+kind: Sandboxes
+metadata: {}
+spec:
+  sandboxes:
+    - name: mail-proxy
+      type: generic
+      enabled: true
+      image: quay.io/sauagarw/gmail-read-proxy:demo1-fix
+      command: "/sandbox/gmail-read-proxy"
+      env:
+        INTER_VM_BEARER_SHA256: "${INTER_VM_BEARER_SHA256}"
+      exposePort: 18080
+      providers:
+        - gmail-read
+    - name: slack-read
+      type: generic
+      enabled: false
+      image: base
+    - name: slack-bot
+      type: generic
+      enabled: false
+      image: base
+    - name: slack-send
+      type: generic
+      enabled: false
+      image: base
+    - name: web-research
+      type: generic
+      enabled: false
+      image: base
+    - name: post-service
+      type: generic
+      enabled: false
+      image: base

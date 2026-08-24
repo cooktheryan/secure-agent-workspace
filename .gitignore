@@ -3,6 +3,7 @@
 
 # Secret values (never commit)
 values-secret.yaml
+.env
 .vscode/
 .DS_Store
 jira/
@@ -15,8 +16,6 @@ local-docs/
 graphify-out/
 ssh-keys/
 charts/saw-bom/scripts/__pycache__/
-
-# Local Cirrus cloud-init operator material (never commit)
-cloud-init/.secrets/
 cloud-init/kubernetes/rendered/
 cloud-init/ansible/files/__pycache__/
+images/openclaw-proxy/gog
