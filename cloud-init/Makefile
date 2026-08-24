@@ -10,11 +10,12 @@ PLATFORM             ?= cirrus
 NS                   ?= $(shell oc project -q 2>/dev/null || echo openshell-agents)
 BRANCH               ?= main
 SSH_PUBKEY           ?=
+SSH_PUBKEY_PATH      ?= ~/.ssh/id_ed25519.pub
 CONTAINER_DISK_IMAGE ?= registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest
 GOLDEN_IMAGE_PVC     ?= openshell-gateway-podman-golden
 ANSIBLE_DIR          := ansible
 
-export NS PLATFORM BRANCH SSH_PUBKEY CONTAINER_DISK_IMAGE GOLDEN_IMAGE_PVC
+export NS PLATFORM BRANCH SSH_PUBKEY SSH_PUBKEY_PATH CONTAINER_DISK_IMAGE GOLDEN_IMAGE_PVC
 
 .PHONY: help create-all delete-all verify status
 
@@ -28,7 +29,8 @@ help: ## Show this help
 		"PLATFORM" "Target platform: cirrus | openshift-cnv" "$(PLATFORM)" \
 		"NS" "Kubernetes namespace" "$(NS)" \
 		"BRANCH" "Git branch for cloud-init bootstrap" "$(BRANCH)" \
-		"SSH_PUBKEY" "SSH public key (openshift-cnv)" "$(if $(SSH_PUBKEY),set,unset)" \
+		"SSH_PUBKEY" "SSH public key string (overrides file)" "$(if $(SSH_PUBKEY),set,unset)" \
+		"SSH_PUBKEY_PATH" "Path to SSH public key file" "$(SSH_PUBKEY_PATH)" \
 		"CONTAINER_DISK_IMAGE" "Base VM image (cirrus)" "$(CONTAINER_DISK_IMAGE)" \
 		"GOLDEN_IMAGE_PVC" "Golden image PVC (openshift-cnv)" "$(GOLDEN_IMAGE_PVC)"
 	@echo ""
