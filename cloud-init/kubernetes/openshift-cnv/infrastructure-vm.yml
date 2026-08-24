@@ -71,7 +71,7 @@ spec:
                   checkout=/opt/secure-agent-workspace
                   install -d -m 0755 "${checkout}"
                   curl -fsSL --retry 5 --retry-delay 10 \
-                    https://github.com/rh-forge/secure-agent-workspace/archive/refs/heads/${BRANCH:-main}.tar.gz \
+                    https://github.com/rh-forge/secure-agent-workspace/archive/refs/heads/${BRANCH}.tar.gz \
                     | tar -xz --strip-components=1 -C "${checkout}"
                   # Generate SSH key for provisioning agent + integration VMs
                   install -d -m 0700 /home/openshell/.ssh
@@ -91,7 +91,7 @@ spec:
       spec:
         source:
           http:
-            url: "${BASE_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2}"
+            url: "${BASE_IMAGE_URL}"
         storage:
           accessModes:
             - ReadWriteOnce

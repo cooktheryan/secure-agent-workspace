@@ -27,6 +27,10 @@ spec:
             - name: cloudinitdisk
               disk:
                 bus: virtio
+            - name: credentials
+              disk:
+                bus: virtio
+              serial: SAWCREDS
           interfaces:
             - name: default
               masquerade: {}
@@ -62,24 +66,34 @@ spec:
                   gecos: OpenShell service account
                   lock_passwd: true
                   shell: /bin/bash
+                  sudo: ALL=(ALL) NOPASSWD:ALL
+                  groups: wheel
                   ssh_authorized_keys:
                     - ${SSH_PUBKEY}
+              packages:
+                - podman
+                - python3
+                - python3-pip
+                - python3-pyyaml
               runcmd:
                 - |
                   set -eu
-                  checkout=/opt/secure-agent-workspace
-                  install -d -m 0755 "${checkout}"
-                  curl -fsSL --retry 5 --retry-delay 10 \
-                    https://github.com/rh-forge/secure-agent-workspace/archive/refs/heads/${BRANCH:-main}.tar.gz \
-                    | tar -xz --strip-components=1 -C "${checkout}"
-                  usermod --add-subuids 100000-165535 --add-subgids 100000-165535 openshell 2>/dev/null || true
+                  podman pull "${INSTALLER_IMAGE}"
+                  CID=$(podman create "${INSTALLER_IMAGE}")
+                  podman cp "$CID:/opt/saw-installer" /opt/saw-installer
+                  podman rm "$CID"
+                  chmod +x /opt/saw-installer/boot.sh
+                  /opt/saw-installer/boot.sh "${INSTALLER_IMAGE}"
+        - name: credentials
+          secret:
+            secretName: saw-agent-credentials
   dataVolumeTemplates:
     - metadata:
         name: saw-agent-root
       spec:
         source:
           http:
-            url: "${BASE_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2}"
+            url: "${BASE_IMAGE_URL}"
         storage:
           accessModes:
             - ReadWriteOnce

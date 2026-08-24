@@ -21,6 +21,7 @@
     container_disk_image: "{{ lookup('env', 'CONTAINER_DISK_IMAGE') | default('registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest', true) }}"
     golden_image_pvc: "{{ lookup('env', 'GOLDEN_IMAGE_PVC') | default('openshell-gateway-podman-golden', true) }}"
     base_image_url: "{{ lookup('env', 'BASE_IMAGE_URL') | default('https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2', true) }}"
+    installer_image: "{{ lookup('env', 'INSTALLER_IMAGE') | default('quay.io/rh-forge/saw-installer-agent:latest', true) }}"
     secrets_dir: "{{ playbook_dir }}/../.secrets"
     kube_dir: "{{ playbook_dir }}/../kubernetes/{{ platform }}"
     action: "create"
@@ -75,6 +76,8 @@
             - gmail-write-frontdoor
             - m365-write-frontdoor
             - slack-write-frontdoor
+            - saw-agent-credentials
+            - saw-integration-credentials
           changed_when: true
 
         - name: Done
@@ -146,6 +149,26 @@
       changed_when: true
 
     # ==========================================
+    # Per-role credential secrets (mounted as disks on VMs)
+    # ==========================================
+    - name: Create saw-agent-credentials secret
+      ansible.builtin.shell: |
+        oc create secret generic saw-agent-credentials -n {{ ns }} \
+          --from-file=inter-vm-bearer={{ secrets_dir }}/inter-vm-bearer \
+          --dry-run=client -o yaml | oc apply -f -
+      changed_when: true
+
+    - name: Create saw-integration-credentials secret
+      ansible.builtin.shell: |
+        oc create secret generic saw-integration-credentials -n {{ ns }} \
+          --from-literal=inter-vm-bearer-sha256="{{ bearer_sha.stdout | trim }}" \
+          --from-file=gmail-write-frontdoor={{ secrets_dir }}/gmail-write-frontdoor \
+          --from-file=m365-write-frontdoor={{ secrets_dir }}/m365-write-frontdoor \
+          --from-file=slack-write-frontdoor={{ secrets_dir }}/slack-write-frontdoor \
+          --dry-run=client -o yaml | oc apply -f -
+      changed_when: true
+
+    # ==========================================
     # Cache base image (optional)
     # ==========================================
     - name: Import golden base image (cache=true)
@@ -180,6 +203,7 @@
             -e "s|\${CONTAINER_DISK_IMAGE}|{{ container_disk_image }}|g" \
             -e "s|\${SSH_PUBKEY}|{{ ssh_pubkey }}|g" \
             -e "s|\${BASE_IMAGE_URL}|{{ base_image_url }}|g" \
+            -e "s|\${INSTALLER_IMAGE}|{{ installer_image }}|g" \
           "{{ item }}" | oc apply -n "{{ ns }}" -f -
       loop: "{{ vm_files }}"
       changed_when: true
@@ -190,6 +214,7 @@
         sed -e "s|\${NS}|{{ ns }}|g" \
             -e "s|\${BRANCH}|{{ branch }}|g" \
             -e "s|\${SSH_PUBKEY}|{{ ssh_pubkey }}|g" \
+            -e "s|\${INSTALLER_IMAGE}|{{ installer_image }}|g" \
           "{{ item }}" \
           | sed 's|source:.*|source:|; /source:/a\          pvc:\n            name: {{ golden_dv_name }}\n            namespace: {{ ns }}' \
           | sed '/http:/,/url:/d' \

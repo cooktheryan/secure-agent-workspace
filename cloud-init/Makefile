@@ -14,12 +14,22 @@ SSH_PUBKEY_PATH      ?= ~/.ssh/id_ed25519.pub
 CONTAINER_DISK_IMAGE ?= registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest
 GOLDEN_IMAGE_PVC     ?= openshell-gateway-podman-golden
 BASE_IMAGE_URL       ?= https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2
+INSTALLER_IMAGE      ?= quay.io/rh-forge/saw-installer-agent:latest
 CACHE                ?= false
 ANSIBLE_DIR          := ansible
 
-export NS PLATFORM BRANCH SSH_PUBKEY SSH_PUBKEY_PATH CONTAINER_DISK_IMAGE GOLDEN_IMAGE_PVC BASE_IMAGE_URL
+export NS PLATFORM BRANCH SSH_PUBKEY SSH_PUBKEY_PATH CONTAINER_DISK_IMAGE GOLDEN_IMAGE_PVC BASE_IMAGE_URL INSTALLER_IMAGE
 
-.PHONY: help create-all delete-all verify status
+SSH_KEY          ?= ~/.ssh/id_ed25519
+VIRTCTL_SSH      = virtctl -n $(NS) ssh openshell@vm/$(1) \
+		--identity-file=$(SSH_KEY) \
+		--local-ssh-opts=-oStrictHostKeyChecking=no \
+		--local-ssh-opts=-oUserKnownHostsFile=/dev/null
+
+.PHONY: help create-all delete-all verify status \
+	agent-logs agent-logs-init agent-ssh \
+	integration-logs integration-logs-init integration-ssh \
+	infra-logs infra-ssh
 
 help: ## Show this help
 	@echo ""
@@ -36,6 +46,7 @@ help: ## Show this help
 		"CONTAINER_DISK_IMAGE" "Base VM image (cirrus)" "$(CONTAINER_DISK_IMAGE)" \
 		"GOLDEN_IMAGE_PVC" "Golden image PVC (openshift-cnv)" "$(GOLDEN_IMAGE_PVC)" \
 		"BASE_IMAGE_URL" "Fedora Cloud qcow2 URL (openshift-cnv)" "$(BASE_IMAGE_URL)" \
+		"INSTALLER_IMAGE" "SAW BOM installer container image" "$(INSTALLER_IMAGE)" \
 		"CACHE" "Cache base image as golden DV, openshift-cnv only (true|false)" "$(CACHE)"
 	@echo ""
 	@echo "Targets:"
@@ -70,3 +81,24 @@ verify: ## Verify all VMs are running
 status: ## Show VM status
 	@echo "=== VMs in $(NS) ==="
 	@kubectl get vmi -n $(NS) 2>/dev/null || echo "No running VMIs"
+
+agent-logs: ## Stream agent VM installer logs
+	$(call VIRTCTL_SSH,saw-agent) --command="sudo journalctl -u saw-bom-install.service -f --no-pager"
+
+agent-logs-init: ## Show agent VM cloud-init boot log
+	$(call VIRTCTL_SSH,saw-agent) --command="sudo cat /var/log/saw-cloud-init.log"
+
+agent-ssh: ## SSH into agent VM
+	$(call VIRTCTL_SSH,saw-agent)
+
+integration-logs: ## Stream integration VM installer logs
+	$(call VIRTCTL_SSH,saw-integration) --command="sudo journalctl -u saw-bom-install.service -f --no-pager"
+
+integration-logs-init: ## Show integration VM cloud-init boot log
+	$(call VIRTCTL_SSH,saw-integration) --command="sudo cat /var/log/saw-cloud-init.log"
+
+integration-ssh: ## SSH into integration VM
+	$(call VIRTCTL_SSH,saw-integration)
+
+infra-ssh: ## SSH into infrastructure VM
+	$(call VIRTCTL_SSH,saw-infrastructure)
