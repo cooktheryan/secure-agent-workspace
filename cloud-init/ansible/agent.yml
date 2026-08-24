@@ -983,9 +983,17 @@
 
               if [ -n "${sandbox_state}" ]; then
                 for attempt in $(/usr/bin/seq 1 10); do
-                  if /usr/local/bin/openshell sandbox delete {{ sandbox_name }}; then
+                  delete_rc=0
+                  /usr/bin/timeout 30s /usr/local/bin/openshell sandbox delete {{ sandbox_name }} || delete_rc=$?
+                  if [ "${delete_rc}" -eq 0 ]; then
                     break
                   fi
+                  if [ "${delete_rc}" -eq 124 ]; then
+                    echo "OpenClaw sandbox delete timed out; cleaning matching rootless Podman containers before retry" >&2
+                  fi
+                  /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
+                    | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
+                    | /usr/bin/xargs -r /usr/bin/podman rm -f || true
                   /usr/bin/sleep 3
                 done
 

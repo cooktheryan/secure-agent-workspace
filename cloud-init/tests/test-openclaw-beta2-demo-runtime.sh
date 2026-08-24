@@ -43,6 +43,8 @@ if grep -Fq 'openclaw --version | grep -Fq "2026.8.1-beta.2"' "$agent_playbook";
   exit 1
 fi
 grep -Fq 'sandbox_state_after_delete=' "$agent_playbook"
+grep -Fq '/usr/bin/timeout 30s /usr/local/bin/openshell sandbox delete {{ sandbox_name }}' "$agent_playbook"
+grep -Fq 'OpenClaw sandbox delete timed out; cleaning matching rootless Podman containers before retry' "$agent_playbook"
 grep -Fq 'OpenClaw sandbox remained in ${sandbox_state_after_delete} after delete; refusing to recreate yet' "$agent_playbook"
 grep -Fq 'exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1' "$agent_playbook"
 grep -Fq 'node -e "const net = require(\"node:net\")' "$agent_playbook"
