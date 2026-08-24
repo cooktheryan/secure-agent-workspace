@@ -14,6 +14,7 @@ SSH_PUBKEY_PATH      ?= ~/.ssh/id_ed25519.pub
 CONTAINER_DISK_IMAGE ?= registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest
 GOLDEN_IMAGE_PVC     ?= openshell-gateway-podman-golden
 BASE_IMAGE_URL       ?= https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2
+CACHE                ?= false
 ANSIBLE_DIR          := ansible
 
 export NS PLATFORM BRANCH SSH_PUBKEY SSH_PUBKEY_PATH CONTAINER_DISK_IMAGE GOLDEN_IMAGE_PVC BASE_IMAGE_URL
@@ -34,7 +35,8 @@ help: ## Show this help
 		"SSH_PUBKEY_PATH" "Path to SSH public key file" "$(SSH_PUBKEY_PATH)" \
 		"CONTAINER_DISK_IMAGE" "Base VM image (cirrus)" "$(CONTAINER_DISK_IMAGE)" \
 		"GOLDEN_IMAGE_PVC" "Golden image PVC (openshift-cnv)" "$(GOLDEN_IMAGE_PVC)" \
-		"BASE_IMAGE_URL" "Fedora Cloud qcow2 URL (openshift-cnv)" "$(BASE_IMAGE_URL)"
+		"BASE_IMAGE_URL" "Fedora Cloud qcow2 URL (openshift-cnv)" "$(BASE_IMAGE_URL)" \
+		"CACHE" "Cache base image as golden DV, openshift-cnv only (true|false)" "$(CACHE)"
 	@echo ""
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+[a-zA-Z0-9_-]*:.*## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -53,7 +55,8 @@ create-all: ## Create secrets + all three VMs (infrastructure, integration, agen
 		-e branch=$(BRANCH) \
 		-e ssh_pubkey="$(SSH_PUBKEY)" \
 		-e container_disk_image="$(CONTAINER_DISK_IMAGE)" \
-		-e golden_image_pvc="$(GOLDEN_IMAGE_PVC)"
+		-e golden_image_pvc="$(GOLDEN_IMAGE_PVC)" \
+		-e cache=$(CACHE)
 
 delete-all: ## Delete all three VMs + K8s Secrets
 	@ansible-playbook $(ANSIBLE_DIR)/provision.yml \

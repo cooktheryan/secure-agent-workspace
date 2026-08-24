@@ -24,6 +24,8 @@
     secrets_dir: "{{ playbook_dir }}/../.secrets"
     kube_dir: "{{ playbook_dir }}/../kubernetes/{{ platform }}"
     action: "create"
+    cache: false
+    golden_dv_name: "saw-base-golden"
     vms:
       - role: infrastructure
       - role: integration
@@ -144,6 +146,21 @@
       changed_when: true
 
     # ==========================================
+    # Cache base image (optional)
+    # ==========================================
+    - name: Import golden base image (cache=true)
+      when: cache | bool and platform == 'openshift-cnv'
+      ansible.builtin.script: "{{ playbook_dir }}/../scripts/import-base-image.sh"
+      environment:
+        NS: "{{ ns }}"
+        BASE_IMAGE_URL: "{{ base_image_url }}"
+        GOLDEN_DV_NAME: "{{ golden_dv_name }}"
+
+    - name: Set DataVolume source type
+      ansible.builtin.set_fact:
+        dv_source: "{{ 'pvc' if (cache | bool) else 'http' }}"
+
+    # ==========================================
     # Create VMs
     # ==========================================
     - name: Resolve CRD file for each VM
@@ -155,15 +172,28 @@
             ) | list
           }}
 
-    - name: Apply VM CRDs
+    - name: Apply VM CRDs (http source)
+      when: not (cache | bool) or platform == 'cirrus'
       ansible.builtin.shell: |
         sed -e "s|\${NS}|{{ ns }}|g" \
             -e "s|\${BRANCH}|{{ branch }}|g" \
             -e "s|\${CONTAINER_DISK_IMAGE}|{{ container_disk_image }}|g" \
             -e "s|\${SSH_PUBKEY}|{{ ssh_pubkey }}|g" \
-            -e "s|\${GOLDEN_IMAGE_PVC}|{{ golden_image_pvc }}|g" \
             -e "s|\${BASE_IMAGE_URL}|{{ base_image_url }}|g" \
           "{{ item }}" | oc apply -n "{{ ns }}" -f -
+      loop: "{{ vm_files }}"
+      changed_when: true
+
+    - name: Apply VM CRDs (pvc clone from cached golden image)
+      when: (cache | bool) and platform == 'openshift-cnv'
+      ansible.builtin.shell: |
+        sed -e "s|\${NS}|{{ ns }}|g" \
+            -e "s|\${BRANCH}|{{ branch }}|g" \
+            -e "s|\${SSH_PUBKEY}|{{ ssh_pubkey }}|g" \
+          "{{ item }}" \
+          | sed 's|source:.*|source:|; /source:/a\          pvc:\n            name: {{ golden_dv_name }}\n            namespace: {{ ns }}' \
+          | sed '/http:/,/url:/d' \
+          | oc apply -n "{{ ns }}" -f -
       loop: "{{ vm_files }}"
       changed_when: true
 
