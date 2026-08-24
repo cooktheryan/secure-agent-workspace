@@ -68,9 +68,9 @@ change the complete reference set together.
 
 | Reference | Default | Used by | If you change it |
 | --- | --- | --- | --- |
-| Agent VM `Server`/Service name | `saw-agent` | `kubernetes/agent-server.yml`, `Route/saw-agent-openclaw`, operator commands | Rename the Server, route target service, route hostname convention, and any operator commands that reference `server/saw-agent`, `vmi/saw-agent`, or `svc/saw-agent`. |
+| Agent VM `Server`/Service name | `saw-agent` | `kubernetes/agent-server.yml`, `Route/saw-agent-userport`, operator commands | Rename the Server, route target service, route hostname convention, and any operator commands that reference `server/saw-agent`, `vmi/saw-agent`, or `svc/saw-agent`. |
 | Integration VM `Server`/Service name | `saw-integ` | `kubernetes/integrations-server.yml`, saw-agent `inference_endpoint_url`, integration TLS SANs | Rename the Server and update saw-agent to call `https://<new-name>.<namespace>.svc.cluster.local:18083/v1`; regenerate the integration TLS certificate for the new DNS names. |
-| Browser route name and host | `saw-agent-openclaw`, `saw-agent-openclaw.<namespace>.dal.dev.cirrus.ibm.com` | Route creation, Keycloak redirect URI/web origin, `openclaw_route_origin`, `openclaw_proxy_redirect_url` | Update Keycloak redirect/web-origin settings and the corresponding values in `Secret/saw-agent-vars`. |
+| Browser route name and host | `saw-agent-userport`, `saw-agent-userport.<namespace>.dal.dev.cirrus.ibm.com` | Route creation, Keycloak redirect URI/web origin, `openclaw_route_origin`, `openclaw_proxy_redirect_url` | Update Keycloak redirect/web-origin settings and the corresponding values in `Secret/saw-agent-vars`. |
 | saw-agent state PVC | `saw-agent-state-persist` | `kubernetes/agent-server.yml` | Update the `persistent-state` PVC claim name before creating `Server/saw-agent`. Existing data stays with the old PVC unless copied or recreated through the storage workflow. |
 | saw-agent asset PVC | `saw-agent-assets-persist` | `kubernetes/agent-server.yml` | Update the `persistent-assets` PVC claim name before creating `Server/saw-agent`. This disk holds rootless container storage and OpenClaw sandbox assets. |
 | saw-integ persistence PVC | `saw-integ-persist` | `kubernetes/integrations-server.yml` | Update the `persistent-state` PVC claim name before creating `Server/saw-integ`. This disk holds the integration proxy state and provider key file. |
@@ -207,14 +207,14 @@ when the VM is recreated.
 ```bash
 oc -n "$NS" wait --for=jsonpath='{.metadata.name}'=saw-agent service/saw-agent --timeout=10m
 
-oc -n "$NS" create route edge saw-agent-openclaw \
+oc -n "$NS" create route edge saw-agent-userport \
   --service=saw-agent \
   --port=userport \
   --hostname="$ROUTE_HOST" \
   --insecure-policy=Redirect \
   --dry-run=client -o yaml | oc apply -f -
 
-oc -n "$NS" get route saw-agent-openclaw
+oc -n "$NS" get route saw-agent-userport
 ```
 
 ### 7. Verify provisioning and access
@@ -243,23 +243,12 @@ curl -sk https://127.0.0.1:28083/readyz
 Finally open the browser route:
 
 ```text
-https://saw-agent-openclaw.<namespace>.dal.dev.cirrus.ibm.com/
+https://saw-agent-userport.<namespace>.dal.dev.cirrus.ibm.com/
 ```
 
 Sign in as an allowed Keycloak user, then send a prompt in OpenClaw. A working
 deployment reaches OpenClaw through saw-agent and sends model traffic from saw-agent
 to saw-integ over the internal `Service/saw-integ:18083` path.
-
-## Forge UI boundary
-
-Forge UI is not deployed by this two-VM cloud-init flow. The `saw-agent` VM
-exposes only the authenticated OpenClaw route and internal provisioning
-diagnostics. Deploy Forge UI through the separate demo/UI orchestration, then
-point it at this OpenClaw endpoint if needed:
-
-```text
-https://saw-agent-openclaw.<namespace>.dal.dev.cirrus.ibm.com/
-```
 
 ## Experimental VM persistence
 

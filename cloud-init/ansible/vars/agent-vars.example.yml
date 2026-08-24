@@ -28,9 +28,6 @@ integration_proxy_ca_pem: ""
 
 openshell_version: 0.0.103
 sandbox_image: quay.io/rh-ai-quickstart/openclaw-openshell@sha256:a9113294df7bef4794b72c10415d9b883064d01ca044d6938269d601061b435f
-openclaw_demo_csb_enabled: false
-openclaw_sandbox_uid: "1000"
-openclaw_sandbox_gid: "1000"
 gateway_image: ghcr.io/nvidia/openshell/gateway:0.0.103
 supervisor_image: ghcr.io/nvidia/openshell/supervisor:0.0.103
 openclaw_proxy_image: quay.io/oauth2-proxy/oauth2-proxy@sha256:10a1165743a192e1940b4708fb9647027185ce11a681a1c5519b442ff7f1f561

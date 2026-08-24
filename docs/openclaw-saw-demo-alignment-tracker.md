@@ -29,7 +29,7 @@ PR #6 changes the target from the older two-VM README into a stricter
 - Demo images are selected with `:demo1` tags, imported into the OpenShift
   internal registry, and resolved to immutable digests before use.
 - The normal path imports credential-free runtime/proxy images from
-  `quay.io/redhat-et/*:demo1`; Forge UI is handled by separate demo/UI
+  `quay.io/redhat-et/*:demo1`; External UI is handled by separate demo/UI
   orchestration, not by the saw-agent VM.
 - OpenShell gateway, supervisor, and CLI are pinned to `0.0.110` and verified
   on both VMs after setup.
@@ -93,7 +93,7 @@ environment intentionally differs from the latest upstream demo workstream.
 - [ ] Reconcile VM naming. This branch uses `saw-agent` / `saw-integ`; PR #6's
   `demo.env.example` defaults to `demo1-agent` / `demo1-integ`.
 - [ ] Reconcile route/auth. This branch uses the authenticated
-  `saw-agent-openclaw` route; PR #6's Forge UI path uses a demo header injector
+  `saw-agent-openclaw` route; PR #6's External UI path uses a demo header injector
   and explicitly says it is not a production auth boundary.
 - [ ] Reconcile inference. This branch uses `saw-integ:18083` for the current
   OpenAI-compatible integration proxy; PR #6 reserves `18083` for M365 write
@@ -180,7 +180,7 @@ credentials staying on the integration VM side of the boundary.
 - [ ] Implement the PR #6 image import/internal-registry flow instead of
   VM-time image builds:
   - `scripts/import-demo-runtime-images.sh`
-  - `scripts/build-rh-forge-ui-images.sh`
+  - `scripts/build-rh-external-ui-images.sh`
   - `scripts/configure-internal-registry.sh`
   - internal ImageStreamTags for all nine demo images
 - [ ] Keep the normal path Quay-login-free: PR #6 says published `demo1` images
@@ -238,69 +238,3 @@ daily-briefing skill installed into OpenClaw backend ID `default`.
 - [ ] Track the installed `forge-agent-catalog` commit for reproducibility.
 - [ ] Ensure Home starts empty and offers "Run daily briefing" rather than
   generating fixture drafts or silently starting provider workflows.
-
-### Forge UI boundary
-
-Forge UI is intentionally outside this saw-agent cloud-init path. This branch
-does not deploy Forge UI routes, saw-agent ports, containers, or user services.
-Use the separate demo/UI orchestration to host Forge UI remotely and point it at
-the authenticated OpenClaw route when needed.
-
-## Suggested implementation order
-
-1. Keep the current GLM/name-change baseline as the rollback point.
-2. Reconcile the PR #6 port map before adding any proxy:
-   - move inference from `18083` to `18086`;
-   - reserve `18083` for M365 write.
-3. Add the internal-registry image import/auth flow without changing the live
-   OpenClaw runtime image.
-4. Add one read-only proxy first, preferably Gmail read.
-5. Deploy or hot-apply the smallest safe unit and validate:
-   - integration proxy ready endpoint
-   - agent ready endpoint
-   - OpenClaw UI login as `alice`
-   - one LLM request
-   - one proxy-backed tool request
-6. Commit the healthy checkpoint.
-7. Add the paired write proxy for the same provider and repeat the full
-   validation gate.
-8. Repeat for M365 read/write, then Slack read/write.
-9. Add restart recovery and verify it with an authorized reboot only after the
-   non-reboot checks are stable.
-10. Revisit OpenClaw `2026.8.1-beta.2` only through the PR #6 internal-image
-    flow or a fixed image that passes `openclaw --version` under direct Podman.
-11. Keep Forge UI as a separate remotely deployed checkpoint outside this
-    saw-agent VM flow.
-
-## Validation gate for every checked item
-
-Before checking off or removing an item:
-
-- [ ] No secret value appears in Git diff, logs, or copied command output.
-- [ ] `saw-integ` health/readiness succeeds for the relevant service.
-- [ ] `saw-agent` OpenClaw route is reachable.
-- [ ] Browser login as `alice` succeeds.
-- [ ] OpenClaw can complete a basic LLM response.
-- [ ] The new integration/tool path works at least once.
-- [ ] Fresh deployment or reboot behavior is understood and documented.
-- [ ] A commit records the healthy checkpoint.
-
-## Operational notes
-
-- When rendering Kubernetes manifests with shell variables embedded in
-  cloud-init, use namespace-only substitution:
-
-  ```bash
-  envsubst '${NS}' < input.yml | oc apply -f -
-  ```
-
-  Do not use broad `envsubst`; it can erase cloud-init shell variables such as
-  `${vars_device}` and `${checkout}`.
-
-- Keep provider secrets in OpenShift Secrets or on the integration VM. Do not
-  commit OAuth tokens, API keys, refresh tokens, front-door bearers, or gateway
-  tokens.
-- The current GLM implementation still uses some OpenAI-compatible naming
-  (`OPENAI_*`, `openai_forwarder.py`) because the proxy speaks the OpenAI API
-  shape. Provider-neutral naming can be cleaned up later, but should not block
-  the functional proxy work.

@@ -56,18 +56,13 @@ Feature: saw-agent persistent OpenClaw state
       When the OpenClaw sandbox is created
       Then the sandbox receives writable durable OpenClaw state
 
-  Rule: While saw-agent deploys the OpenClaw 2026.8.1 beta2 runtime, the agent playbook shall use the beta2 database bootstrap and a compile-cache-safe gateway launch.
+  Rule: While saw-agent uses the stable OpenClaw runtime, the agent playbook shall disable Node compile cache during gateway startup.
 
-    Scenario: OpenClaw beta2 starts with the demo runtime contract
-      Given saw-agent is deployed for the OpenClaw SAW demo
-      When agent provisioning creates the OpenClaw sandbox
-      Then the sandbox runs with the demo image user
-      And OpenClaw state is mounted at the demo persist path
-      And the beta2 database bootstrap is available before the gateway starts
-      And the gateway launch disables the Node compile cache
-      And the gateway launch binds to the raw forward port
-      And the gateway launcher waits until the demo gateway is ready
-      And the demo gateway is bridged from its fixed sandbox port to the raw forward port
+    Scenario: Stable OpenClaw gateway avoids early Node process termination
+      Given saw-agent is deployed with the stable OpenClaw runtime
+      When agent provisioning launches the OpenClaw gateway inside the sandbox
+      Then the sandbox execution environment disables Node compile cache
+      And the OpenClaw gateway startup shell disables Node compile cache
 
   Rule: If saw-agent has a persisted non-Ready OpenClaw sandbox, then the agent playbook shall replace it before creating the gateway sandbox.
 
@@ -88,11 +83,6 @@ Feature: saw-agent persistent OpenClaw state
       When agent provisioning configures OpenClaw network listeners
       Then oauth2-proxy accepts userport traffic on every guest interface
       And the raw OpenClaw forward remains available only on localhost
-
-    Scenario: Demo gateway readiness uses the OpenClaw ready endpoint
-      Given saw-agent uses the OpenClaw SAW demo runtime
-      When agent provisioning verifies the raw OpenClaw forward
-      Then provisioning checks the OpenClaw ready endpoint through the raw forward
 
   Rule: If the base image does not provide optional Python packaging tools, then the role dispatcher shall avoid installing them on saw-agent.
 

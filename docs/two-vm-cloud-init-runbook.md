@@ -255,11 +255,6 @@ simple question. The response proves:
 4. OpenClaw → saw-integ Service DNS works.
 5. saw-integ → upstream model works.
 
-## 8. Forge UI boundary
-
-Forge UI is deployed outside this two-VM cloud-init flow. The `saw-agent` VM
-does not expose Forge UI ports, routes, containers, or systemd units.
-
 ## 9. Safe rerun without recreating VMs
 
 If cloud-init already ran and you need to consume a branch update:

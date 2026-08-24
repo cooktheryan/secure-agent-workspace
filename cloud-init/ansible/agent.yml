@@ -18,11 +18,6 @@
     provider_sel: "{{ provider_map[inference_provider_cfg] | mandatory }}"
     inference_provider_name: "inference-{{ inference_provider_cfg }}"
     trusted_sandbox_image_cfg: "localhost/saw-openclaw-trusted:saw-agent-vm"
-    openclaw_demo_csb_enabled_cfg: "{{ openclaw_demo_csb_enabled | default(false) }}"
-    openclaw_service_units_cfg: "{{ ['openclaw-sandbox.service', 'openclaw-forward.service'] if (openclaw_demo_csb_enabled | default(false) | bool) else ['openclaw-sandbox.service', 'openclaw-gateway.service', 'openclaw-forward.service'] }}"
-    openclaw_sandbox_uid_cfg: "{{ openclaw_sandbox_uid | default('65532') }}"
-    openclaw_sandbox_gid_cfg: "{{ openclaw_sandbox_gid | default(openclaw_sandbox_uid_cfg) }}"
-    openclaw_demo_podman_volume: openclaw-saw-data
     gw_name: openshell
     mtls_gw: openshell-local
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
@@ -32,15 +27,6 @@
     openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
     openclaw_proxy_image_cfg: "{{ openclaw_proxy_image | mandatory }}"
     openclaw_proxy_redirect_url_cfg: "{{ openclaw_proxy_redirect_url | default(openclaw_route_origin_cfg ~ '/oauth2/callback') }}"
-    openclaw_gateway_token_path: "{{ user_home }}/.config/secure-agent-workspace/openclaw-gateway-token"
-    openclaw_provider_config:
-      api: openai-completions
-      baseUrl: https://inference.local/v1
-      apiKey: unused
-      models:
-        - id: "{{ inference_model_cfg }}"
-          name: "{{ inference_model_cfg }}"
-    openclaw_providers_json: "{{ {inference_provider_cfg: openclaw_provider_config} | to_json }}"
     keycloak_ca_pem_cfg: "{{ keycloak_ca_pem | default('') }}"
     # Encode the complete patch before it crosses the saw-integ nested shell parsers
     # (host bash -> sandbox /bin/sh). This preserves JSON arrays exactly.
@@ -384,14 +370,6 @@
         # but make the mounted directory writable inside the sandbox.
         mode: "0777"
 
-    - name: Render OpenClaw sandbox policy
-      ansible.builtin.template:
-        src: openclaw-policy.yml.j2
-        dest: "{{ user_home }}/.config/openshell/openclaw-policy.yml"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0644"
-
     # === [1/8] Podman socket + user manager ===
     # Rootless podman needs the cpu/cpuset/io controllers delegated to the user
     # slice; systemd does not delegate them by default, so sandbox creation
@@ -467,35 +445,6 @@
       become_user: "{{ user_name }}"
       environment: "{{ user_env }}"
       changed_when: true
-
-    - name: Ensure user OpenClaw token runtime dirs exist
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0755"
-      loop:
-        - "{{ user_home }}/.config/systemd/user"
-        - "{{ user_home }}/.config/secure-agent-workspace"
-        - "{{ user_home }}/.local/bin"
-      when: openclaw_demo_csb_enabled_cfg | bool
-
-    - name: Generate persistent OpenClaw gateway token
-      ansible.builtin.command: >-
-        openssl rand -hex -out {{ openclaw_gateway_token_path }} 32
-      args:
-        creates: "{{ openclaw_gateway_token_path }}"
-      when: openclaw_demo_csb_enabled_cfg | bool
-      no_log: true
-
-    - name: Protect persistent OpenClaw gateway token
-      ansible.builtin.file:
-        path: "{{ openclaw_gateway_token_path }}"
-        owner: "{{ user_name }}"
-        group: "{{ user_name }}"
-        mode: "0600"
-      when: openclaw_demo_csb_enabled_cfg | bool
 
     # === [2/8] Gateway config files (env, toml, systemd unit) ===
     - name: Ensure /etc/openshell exists
@@ -940,17 +889,7 @@
 
               export OPENSHELL_GATEWAY=openshell-local
               export NO_COLOR=1
-              {% if openclaw_demo_csb_enabled_cfg | bool %}
-              /usr/bin/podman volume create --ignore {{ openclaw_demo_podman_volume }} >/dev/null
-              volume_path="$(/usr/bin/podman volume inspect {{ openclaw_demo_podman_volume }} --format '{{ "{{" }}.Mountpoint{{ "}}" }}')"
-              /usr/bin/podman unshare /usr/bin/mkdir -p "${volume_path}/workspace" "${volume_path}/.openclaw"
-              /usr/bin/podman unshare /usr/bin/chown -R {{ openclaw_sandbox_uid_cfg }}:{{ openclaw_sandbox_gid_cfg }} "${volume_path}"
-              /usr/bin/podman unshare /usr/bin/chmod 0700 "${volume_path}"
-              driver_config_json='{"podman":{"mounts":[{"type":"volume","source":"{{ openclaw_demo_podman_volume }}","target":"/sandbox/persist","read_only":false}]}}'
-              gateway_token="$(cat "{{ openclaw_gateway_token_path }}")"
-              {% else %}
               driver_config_json='{"podman":{"mounts":[{"type":"bind","source":"{{ openclaw_home_host_path }}","target":"/sandbox/.openclaw","read_only":false,"selinux_label":"shared"}]}}'
-              {% endif %}
 
               sandbox_state=""
               sandbox_list_ready=false
@@ -971,120 +910,46 @@
               fi
 
               if [ "${sandbox_state}" = "Ready" ]; then
-                {% if openclaw_demo_csb_enabled_cfg | bool %}
-                if /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
-                  /bin/sh -c 'curl -fsS http://127.0.0.1:18789/healthz >/dev/null 2>&1'; then
-                  exit 0
-                fi
-                echo "OpenClaw sandbox is Ready but the demo gateway is unhealthy; replacing it" >&2
-                {% else %}
                 exit 0
-                {% endif %}
               fi
 
               if [ -n "${sandbox_state}" ]; then
                 for attempt in $(/usr/bin/seq 1 10); do
-                  delete_rc=0
-                  /usr/bin/timeout 30s /usr/local/bin/openshell sandbox delete {{ sandbox_name }} || delete_rc=$?
-                  if [ "${delete_rc}" -eq 0 ]; then
+                  if /usr/local/bin/openshell sandbox delete {{ sandbox_name }}; then
                     break
                   fi
-                  if [ "${delete_rc}" -eq 124 ]; then
-                    echo "OpenClaw sandbox delete timed out; cleaning matching rootless Podman containers before retry" >&2
-                  fi
-                  /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
-                    | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
-                    | /usr/bin/xargs -r /usr/bin/podman rm -f || true
                   /usr/bin/sleep 3
                 done
 
-                        /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
-                          | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
-                          | /usr/bin/xargs -r /usr/bin/podman rm -f || true
+                /usr/bin/podman ps -a --format '{{ "{{" }}.ID{{ "}}" }} {{ "{{" }}.Names{{ "}}" }}' \
+                  | /usr/bin/awk '$2 ~ /^openshell-default--{{ sandbox_name }}-/ {print $1}' \
+                  | /usr/bin/xargs -r /usr/bin/podman rm -f || true
+              fi
 
-                        sandbox_state_after_delete=""
-                        for attempt in $(/usr/bin/seq 1 60); do
-                          sandbox_state_after_delete="$(
-                            /usr/local/bin/openshell sandbox list \
-                              | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
-                          )"
-                          if [ -z "${sandbox_state_after_delete}" ]; then
-                            break
-                          fi
-                          /usr/bin/sleep 2
-                        done
+              for attempt in $(/usr/bin/seq 1 3); do
+                if [ "${attempt}" -eq 3 ]; then
+                  exec /usr/local/bin/openshell sandbox create \
+                    --name {{ sandbox_name }} \
+                    --from {{ trusted_sandbox_image_cfg }} \
+                    --policy {{ playbook_dir }}/files/openclaw-policy.yml \
+                    --driver-config-json "${driver_config_json}" \
+                    --no-tty \
+                    --memory 12Gi \
+                    --provider {{ inference_provider_name }} \
+                    -- /bin/sh -c "echo sandbox-ready"
+                fi
 
-                        if [ -n "${sandbox_state_after_delete}" ]; then
-                          echo "OpenClaw sandbox remained in ${sandbox_state_after_delete} after delete; refusing to recreate yet" >&2
-                          exit 1
-                        fi
-                      fi
-
-              create_openclaw_sandbox() {
                 /usr/local/bin/openshell sandbox create \
                   --name {{ sandbox_name }} \
                   --from {{ trusted_sandbox_image_cfg }} \
-                  --policy {{ user_home }}/.config/openshell/openclaw-policy.yml \
+                  --policy {{ playbook_dir }}/files/openclaw-policy.yml \
                   --driver-config-json "${driver_config_json}" \
-                  {% if openclaw_demo_csb_enabled_cfg | bool %}
-                  --upload {{ playbook_dir }}/files/bootstrap-openclaw-beta2-db.mjs:/tmp/bootstrap-openclaw-beta2-db.mjs \
-                  {% endif %}
                   --no-tty \
                   --memory 12Gi \
                   --provider {{ inference_provider_name }} \
-                  {% if openclaw_demo_csb_enabled_cfg | bool %}
-                  --env OPENCLAW_GATEWAY_TOKEN="${gateway_token}" \
-                  --env OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw \
-                  --env OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace \
-                  --env OPENCLAW_NO_RESPAWN=1 \
-                  --env NODE_DISABLE_COMPILE_CACHE=1 \
-                  --env OPENCLAW_WIDGET_PORT=18790 \
-                  --env OPENCLAW_PUBLIC_URL={{ openclaw_route_origin_cfg }} \
-                  --env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }} \
-                  --env OPENCLAW_PROVIDERS='{{ openclaw_providers_json }}' \
-                  -- /bin/sh -lc '
-                    set -eu
-                    export HOME=/sandbox
-                    export OPENCLAW_HOME=/sandbox
-                    export OPENCLAW_STATE_DIR=/sandbox/persist/.openclaw
-                    export OPENCLAW_WORKSPACE_DIR=/sandbox/persist/workspace
-                    export NODE_DISABLE_COMPILE_CACHE=1
-                    export SQLITE_TMPDIR=/tmp
-                    export TMPDIR=/tmp
-                    mkdir -p /sandbox/persist/.openclaw /sandbox/persist/workspace
-                    node /tmp/bootstrap-openclaw-beta2-db.mjs
-                    node -e "const net = require(\"node:net\"); const server = net.createServer((client) => { const upstream = net.connect(18789, \"127.0.0.1\"); client.on(\"error\", () => upstream.destroy()); upstream.on(\"error\", () => client.destroy()); client.pipe(upstream); upstream.pipe(client); }); server.on(\"error\", (err) => { if (err && err.code === \"EADDRINUSE\") process.exit(0); console.error(err); process.exit(1); }); server.listen({ host: \"127.0.0.1\", port: {{ openclaw_forward_port_cfg }} });" >/tmp/openclaw-forward-port-bridge.log 2>&1 &
-                    exec /app/entrypoint.sh >/tmp/openclaw-gateway.log 2>&1
-                  '
-                  {% else %}
-                  -- /bin/sh -c "echo sandbox-ready"
-                  {% endif %}
-              }
-
-              {% if openclaw_demo_csb_enabled_cfg | bool %}
-              create_openclaw_sandbox >/tmp/openclaw-sandbox-create.log 2>&1 </dev/null &
-              create_pid=$!
-              /usr/bin/sleep 3
-              if ! /usr/bin/kill -0 "${create_pid}" 2>/dev/null; then
-                create_rc=0
-                wait "${create_pid}" || create_rc=$?
-                sandbox_state="$(
-                  /usr/local/bin/openshell sandbox list \
-                    | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
-                )"
-                if [ -n "${sandbox_state}" ]; then
-                  echo "OpenClaw sandbox create exited with rc=${create_rc}, but {{ sandbox_name }} is ${sandbox_state}; continuing" >&2
-                  exit 0
-                fi
-                echo "OpenClaw sandbox create exited before the gateway health check could run (rc=${create_rc})" >&2
-                /usr/bin/sed -n '1,240p' /tmp/openclaw-sandbox-create.log >&2 || true
-                exit "${create_rc}"
-              fi
-              disown "${create_pid}" 2>/dev/null || true
-              exit 0
-              {% else %}
-              create_openclaw_sandbox
-              {% endif %}
+                  -- /bin/sh -c "echo sandbox-ready" && exit 0
+                /usr/bin/sleep 5
+              done
 
         - name: Write openclaw sandbox systemd user unit
           ansible.builtin.copy:
@@ -1114,41 +979,19 @@
               set -euo pipefail
 
               export OPENSHELL_GATEWAY=openshell-local
-                      gateway_token="$(cat "{{ openclaw_gateway_token_path }}")"
 
-                      {% if openclaw_demo_csb_enabled_cfg | bool %}
-                      for attempt in $(/usr/bin/seq 1 60); do
-                        sandbox_state="$(
-                          /usr/local/bin/openshell sandbox list \
-                            | /usr/bin/awk 'NR>1 && $1=="{{ sandbox_name }}" {print $NF; exit}'
-                        )"
-                        if [ "${sandbox_state}" = "Ready" ]; then
-                          break
-                        fi
-                        /usr/bin/sleep 2
-                      done
-
-                      for attempt in $(/usr/bin/seq 1 60); do
-                        if /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
-                          /bin/sh -c 'curl -fsS http://127.0.0.1:18789/healthz >/dev/null 2>&1'; then
-                  exit 0
-                fi
-                /usr/bin/sleep 2
-              done
-
-              echo "OpenClaw demo gateway did not become healthy inside sandbox" >&2
-              /usr/local/bin/openshell sandbox exec --name {{ sandbox_name }} --no-tty -- \
-                /bin/sh -c 'tail -n 240 /tmp/openclaw-gateway.log 2>/dev/null || true' >&2 || true
-              exit 1
-              {% else %}
               exec /usr/local/bin/openshell sandbox exec \
                 --name {{ sandbox_name }} \
                 --no-tty \
                 --env CUSTOM_API_KEY=proxy-managed \
+                --env NODE_ICU_DATA=/opt/openclaw/node_modules/full-icu \
+                --env NODE_DISABLE_COMPILE_CACHE=1 \
                 -- /bin/sh -c '
                   set -eu
                   export HOME=/sandbox
                   export OPENCLAW_HOME=/sandbox
+                  export NODE_ICU_DATA=/opt/openclaw/node_modules/full-icu
+                  export NODE_DISABLE_COMPILE_CACHE=1
                   export SQLITE_TMPDIR=/sandbox/.openclaw/state
                   export TMPDIR=/sandbox/.openclaw/state
                   export OPENCLAW_NIX_MODE=0
@@ -1175,9 +1018,9 @@
 
                   printf %s "{{ openclaw_trusted_proxy_patch_b64 }}" \
                     | base64 -d >/tmp/openclaw-trusted-proxy.json
+                  openclaw config unset gateway.auth.token || true
                   openclaw config patch \
                     --file /tmp/openclaw-trusted-proxy.json
-                  openclaw config unset gateway.auth.token || true
                   openclaw config validate --json
 
                   nohup openclaw gateway run \
@@ -1186,7 +1029,6 @@
                     --port {{ openclaw_forward_port_cfg }} \
                     >/tmp/openclaw-gateway.log 2>&1 </dev/null &
                 ' </dev/null
-              {% endif %}
 
         - name: Write openclaw gateway systemd user unit
           ansible.builtin.copy:
@@ -1206,7 +1048,6 @@
 
               [Install]
               WantedBy=default.target
-          when: not (openclaw_demo_csb_enabled_cfg | bool)
 
         - name: Write openclaw foreground forward systemd user unit
           ansible.builtin.copy:
@@ -1215,8 +1056,8 @@
             content: |
               [Unit]
               Description=OpenClaw host port forward
-              Requires={% if openclaw_demo_csb_enabled_cfg | bool %}openclaw-sandbox.service{% else %}openclaw-gateway.service{% endif %}
-              After={% if openclaw_demo_csb_enabled_cfg | bool %}openclaw-sandbox.service{% else %}openclaw-gateway.service{% endif %}
+              Requires=openclaw-gateway.service
+              After=openclaw-gateway.service
               PartOf=openclaw-sandbox.service
               StartLimitIntervalSec=0
 
@@ -1332,10 +1173,17 @@
                 daemon_reload: true
               register: openclaw_service_start
               failed_when: false
-              loop: "{{ openclaw_service_units_cfg }}"
+              loop:
+                - openclaw-sandbox.service
+                - openclaw-gateway.service
+                - openclaw-forward.service
 
             - name: Verify openclaw services are active
-              ansible.builtin.command: "systemctl --user is-active {{ openclaw_service_units_cfg | join(' ') }}"
+              ansible.builtin.command: >-
+                systemctl --user is-active
+                openclaw-sandbox.service
+                openclaw-gateway.service
+                openclaw-forward.service
               register: openclaw_services_active
               changed_when: false
               failed_when: openclaw_services_active.rc != 0
@@ -1384,74 +1232,14 @@
               ansible.builtin.fail:
                 msg: OpenClaw user services failed to start; see diagnostics above.
 
-        - name: Enable + start OpenClaw auth proxy with diagnostics
+        - name: Enable + start OpenClaw auth proxy
+          ansible.builtin.systemd:
+            name: openclaw-auth-proxy.service
+            scope: user
+            enabled: true
+            state: started
+            daemon_reload: true
           when: openclaw_proxy_enabled_cfg | bool
-          block:
-            - name: Enable + start OpenClaw auth proxy
-              ansible.builtin.systemd:
-                name: openclaw-auth-proxy.service
-                scope: user
-                enabled: true
-                state: started
-                daemon_reload: true
-          rescue:
-            - name: Read OpenClaw auth proxy dependency status
-              ansible.builtin.command: >-
-                systemctl --user status
-                openclaw-sandbox.service
-                openclaw-gateway.service
-                openclaw-forward.service
-                openclaw-auth-proxy.service
-                --no-pager -l
-              register: openclaw_proxy_dependency_status
-              changed_when: false
-              failed_when: false
-
-            - name: Read OpenClaw auth proxy dependency journal
-              ansible.builtin.command: >-
-                journalctl --user
-                -u openclaw-sandbox.service
-                -u openclaw-gateway.service
-                -u openclaw-forward.service
-                -u openclaw-auth-proxy.service
-                -n 220 --no-pager -o cat
-              register: openclaw_proxy_dependency_journal
-              changed_when: false
-              failed_when: false
-
-            - name: Inspect OpenClaw sandbox list after auth proxy start failure
-              ansible.builtin.command: openshell sandbox list
-              register: openclaw_proxy_failure_sandboxes
-              changed_when: false
-              failed_when: false
-
-            - name: Read OpenClaw gateway launch log after auth proxy start failure
-              ansible.builtin.command: >-
-                openshell sandbox exec --name {{ sandbox_name }} --no-tty --
-                /bin/sh -c 'cat /tmp/openclaw-gateway.log 2>/dev/null || true'
-              register: openclaw_proxy_failure_gateway_log
-              changed_when: false
-              failed_when: false
-
-            - name: Display OpenClaw auth proxy dependency status
-              ansible.builtin.debug:
-                var: openclaw_proxy_dependency_status.stdout_lines
-
-            - name: Display OpenClaw auth proxy dependency journal
-              ansible.builtin.debug:
-                var: openclaw_proxy_dependency_journal.stdout_lines
-
-            - name: Display OpenClaw sandbox list after auth proxy start failure
-              ansible.builtin.debug:
-                var: openclaw_proxy_failure_sandboxes.stdout_lines
-
-            - name: Display OpenClaw gateway launch log after auth proxy start failure
-              ansible.builtin.debug:
-                var: openclaw_proxy_failure_gateway_log.stdout_lines
-
-            - name: Fail provisioning after OpenClaw auth proxy start diagnostics
-              ansible.builtin.fail:
-                msg: OpenClaw auth proxy failed to start; see dependency diagnostics above.
 
         - name: Verify OpenClaw auth proxy readiness with diagnostics
           when: openclaw_proxy_enabled_cfg | bool
@@ -1487,12 +1275,11 @@
           block:
             - name: Wait for openclaw gateway health through raw localhost forward
               ansible.builtin.uri:
-                url: >-
-                  http://127.0.0.1:{{ openclaw_forward_port_cfg }}{% if openclaw_demo_csb_enabled_cfg | bool %}/ready{% else %}/health{% endif %}
+                url: http://127.0.0.1:{{ openclaw_forward_port_cfg }}/health
                 status_code: [200]
                 return_content: true
               register: openclaw_health
-              until: openclaw_health.status == 200 and (('ok' in (openclaw_health.content | default(''))) or ('ready' in (openclaw_health.content | default(''))))
+              until: openclaw_health.status == 200 and 'ok' in (openclaw_health.content | default(''))
               retries: 30
               delay: 5
           rescue:

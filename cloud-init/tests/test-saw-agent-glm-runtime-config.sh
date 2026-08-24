@@ -11,19 +11,18 @@ readme="$repo_root/cloud-init/README.md"
 # OpenAI-compatible chat/completions transport through the saw-integ proxy.
 grep -Fq "glm:" "$agent_playbook"
 grep -Fq "type: openai" "$agent_playbook"
-grep -Fq "openclaw_provider_config:" "$agent_playbook"
-grep -Fq "openclaw_providers_json:" "$agent_playbook"
+grep -Fq "'providers': {" "$agent_playbook"
+grep -Fq "(inference_provider_cfg): {" "$agent_playbook"
 grep -Fq "'primary': inference_provider_cfg ~ '/' ~ inference_model_cfg" "$agent_playbook"
 grep -Fq "'api': 'openai-completions'" "$agent_playbook"
 grep -Fq "'baseUrl': 'https://inference.local/v1'" "$agent_playbook"
 grep -Fq "rits/zai-org/glm-5-2-fp8:" "$agent_playbook"
-grep -Fq -- "--env OPENCLAW_DEFAULT_MODEL={{ inference_provider_cfg }}/{{ inference_model_cfg }}" "$agent_playbook"
-grep -Fq -- "--env OPENCLAW_PROVIDERS='{{ openclaw_providers_json }}'" "$agent_playbook"
 
 grep -Fq -- "--custom-provider-id \"{{ inference_provider_cfg }}\"" "$agent_playbook"
 grep -Fq -- "--custom-compatibility openai" "$agent_playbook"
 
-if grep -R -E -q 'sk-[A-Za-z0-9_-]{12,}' "$repo_root/cloud-init"; then
+if rg -n -e 'sk-[A-Za-z0-9_-]{12,}' "$repo_root/cloud-init" \
+  --glob '!tests/test-saw-agent-glm-runtime-config.sh'; then
   echo "GLM provider key must not be committed" >&2
   exit 1
 fi
