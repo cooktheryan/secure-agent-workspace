@@ -1,0 +1,178 @@
+---
+# Provision the three-VM SAW environment.
+# Creates secrets, applies platform CRDs, waits for VMs to be running.
+#
+# Usage:
+#   ansible-playbook ansible/provision.yml -e platform=cirrus -e ns=my-namespace
+#   ansible-playbook ansible/provision.yml -e platform=openshift-cnv -e ns=my-namespace -e ssh_pubkey="ssh-ed25519 ..."
+#   ansible-playbook ansible/provision.yml -e platform=cirrus -e ns=my-namespace -e action=delete
+
+- name: Provision SAW VMs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    platform: "cirrus"
+    ns: "{{ lookup('env', 'NS') | default('openshell-agents', true) }}"
+    branch: "{{ lookup('env', 'BRANCH') | default('main', true) }}"
+    ssh_pubkey: "{{ lookup('env', 'SSH_PUBKEY') | default('', true) }}"
+    container_disk_image: "{{ lookup('env', 'CONTAINER_DISK_IMAGE') | default('registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest', true) }}"
+    golden_image_pvc: "{{ lookup('env', 'GOLDEN_IMAGE_PVC') | default('openshell-gateway-podman-golden', true) }}"
+    secrets_dir: "{{ playbook_dir }}/../.secrets"
+    kube_dir: "{{ playbook_dir }}/../kubernetes/{{ platform }}"
+    action: "create"
+    vms:
+      - role: infrastructure
+      - role: integration
+      - role: agent
+
+  tasks:
+
+    # ==========================================
+    # Validate
+    # ==========================================
+    - name: Validate platform
+      ansible.builtin.assert:
+        that: platform in ['cirrus', 'openshift-cnv']
+        fail_msg: "platform must be cirrus or openshift-cnv, got '{{ platform }}'"
+
+    - name: Check oc login
+      ansible.builtin.command: oc whoami
+      changed_when: false
+
+    # ==========================================
+    # Delete flow
+    # ==========================================
+    - name: Delete VMs
+      when: action == 'delete'
+      block:
+        - name: Delete each VM
+          ansible.builtin.command: >
+            kubectl delete {{ 'server' if platform == 'cirrus' else 'vm' }}
+            saw-{{ item.role }} -n {{ ns }} --ignore-not-found
+          loop: "{{ vms }}"
+          changed_when: true
+
+        - name: Delete K8s Secrets
+          ansible.builtin.command: >
+            kubectl delete secret {{ item }} -n {{ ns }} --ignore-not-found
+          loop:
+            - inter-vm-bearer
+            - gmail-write-frontdoor
+            - m365-write-frontdoor
+            - slack-write-frontdoor
+          changed_when: true
+
+        - name: Done
+          ansible.builtin.debug:
+            msg: "All VMs and secrets deleted from {{ ns }}"
+
+        - name: End play after delete
+          ansible.builtin.meta: end_play
+
+    # ==========================================
+    # Generate secrets
+    # ==========================================
+    - name: Create secrets directory
+      ansible.builtin.file:
+        path: "{{ secrets_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Generate bearer secrets
+      ansible.builtin.shell: |
+        if [ ! -f "{{ secrets_dir }}/{{ item }}" ]; then
+          openssl rand -hex 32 > "{{ secrets_dir }}/{{ item }}"
+          chmod 600 "{{ secrets_dir }}/{{ item }}"
+          echo "generated"
+        else
+          echo "exists"
+        fi
+      register: secret_results
+      changed_when: "'generated' in secret_results.stdout"
+      loop:
+        - inter-vm-bearer
+        - gmail-write-frontdoor
+        - m365-write-frontdoor
+        - slack-write-frontdoor
+
+    - name: Show secret status
+      ansible.builtin.debug:
+        msg: "{{ item.item }}: {{ item.stdout }}"
+      loop: "{{ secret_results.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ==========================================
+    # Push secrets to K8s
+    # ==========================================
+    - name: Compute inter-VM bearer SHA256
+      ansible.builtin.shell: |
+        echo -n "$(cat {{ secrets_dir }}/inter-vm-bearer)" | sha256sum | cut -d ' ' -f 1
+      register: bearer_sha
+      changed_when: false
+
+    - name: Create inter-vm-bearer K8s Secret
+      ansible.builtin.shell: |
+        oc create secret generic inter-vm-bearer -n {{ ns }} \
+          --from-literal=bearer="$(cat {{ secrets_dir }}/inter-vm-bearer)" \
+          --from-literal=sha256="{{ bearer_sha.stdout | trim }}" \
+          --dry-run=client -o yaml | oc apply -f -
+      changed_when: true
+
+    - name: Create front-door K8s Secrets
+      ansible.builtin.shell: |
+        oc create secret generic {{ item }} -n {{ ns }} \
+          --from-file=bearer={{ secrets_dir }}/{{ item }} \
+          --dry-run=client -o yaml | oc apply -f -
+      loop:
+        - gmail-write-frontdoor
+        - m365-write-frontdoor
+        - slack-write-frontdoor
+      changed_when: true
+
+    # ==========================================
+    # Create VMs
+    # ==========================================
+    - name: Resolve CRD file for each VM
+      ansible.builtin.set_fact:
+        vm_files: >-
+          {{
+            vms | map(attribute='role') | map('regex_replace', '^(.*)$',
+              kube_dir ~ '/' ~ '\1' ~ ('-server.yml' if platform == 'cirrus' else '-vm.yml')
+            ) | list
+          }}
+
+    - name: Apply VM CRDs
+      ansible.builtin.shell: |
+        sed -e "s|\${NS}|{{ ns }}|g" \
+            -e "s|\${BRANCH}|{{ branch }}|g" \
+            -e "s|\${CONTAINER_DISK_IMAGE}|{{ container_disk_image }}|g" \
+            -e "s|\${SSH_PUBKEY}|{{ ssh_pubkey }}|g" \
+            -e "s|\${GOLDEN_IMAGE_PVC}|{{ golden_image_pvc }}|g" \
+          "{{ item }}" | oc apply -n "{{ ns }}" -f -
+      loop: "{{ vm_files }}"
+      changed_when: true
+
+    # ==========================================
+    # Wait for VMs
+    # ==========================================
+    - name: Wait for VMs to be running (up to 5 min)
+      ansible.builtin.shell: |
+        kubectl get vmi saw-{{ item.role }} -n {{ ns }} -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound"
+      register: vm_status
+      until: vm_status.stdout == "Running"
+      retries: 30
+      delay: 10
+      loop: "{{ vms }}"
+      loop_control:
+        label: "saw-{{ item.role }}"
+
+    - name: Show results
+      ansible.builtin.debug:
+        msg: |
+          ✓ All VMs created in {{ ns }} ({{ platform }})
+            saw-infrastructure  — provisioner
+            saw-integration     — proxy services
+            saw-agent           — OpenClaw agent
