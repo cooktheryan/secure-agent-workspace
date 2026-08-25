@@ -32,7 +32,7 @@ spec:
           checkout=/opt/secure-agent-workspace
           install -d -m 0755 "${checkout}"
           curl -fsSL --retry 5 --retry-delay 10 \
-            https://github.com/rh-forge/secure-agent-workspace/archive/refs/heads/${BRANCH:-main}.tar.gz \
+            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/${BRANCH:-feat/cirrus-cloud-init}.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
           usermod --add-subuids 100000-165535 --add-subgids 100000-165535 openshell 2>/dev/null || true
           install -m 0755 "${checkout}/cloud-init/files/saw-provision-debug-server.py" /usr/local/sbin/saw-provision-debug-server
@@ -52,10 +52,10 @@ spec:
           systemctl enable --now saw-provision-log-http.service
           systemd-run --unit=saw-provision.service --setenv=HOME=/root \
             /usr/bin/bash -c 'exec /usr/bin/ansible-playbook -i localhost, \
-            /opt/secure-agent-workspace/cloud-init-new/ansible/agent.yml \
+            /opt/secure-agent-workspace/cloud-init/ansible/site.yml \
             -e @/etc/openshell-saw/vars.yml \
             > /var/log/saw-provision.log 2>&1'
-  containerDiskImage: ${CONTAINER_DISK_IMAGE:-registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest}
+  containerDiskImage: registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:master-e4b3a21-20260707-093716
   operatingSystem: ""
   profile: c4.m24
   running: true

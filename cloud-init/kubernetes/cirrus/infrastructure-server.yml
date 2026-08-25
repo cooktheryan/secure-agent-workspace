@@ -32,7 +32,7 @@ spec:
           checkout=/opt/secure-agent-workspace
           install -d -m 0755 "${checkout}"
           curl -fsSL --retry 5 --retry-delay 10 \
-            https://github.com/rh-forge/secure-agent-workspace/archive/refs/heads/${BRANCH:-main}.tar.gz \
+            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/${BRANCH:-feat/cirrus-cloud-init}.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
           # Infrastructure VM: install provisioning tools, generate secrets,
           # configure agent + integration VMs via SSH.
@@ -50,24 +50,14 @@ spec:
           openssl rand -hex 32 > /home/openshell/.config/saw-secrets/slack-write-frontdoor
           chmod 600 /home/openshell/.config/saw-secrets/*
           chown -R openshell:openshell /home/openshell/.config
-          echo "Infrastructure VM provisioned. Run ansible from /opt/secure-agent-workspace/cloud-init-new/ansible/"
-  containerDiskImage: ${CONTAINER_DISK_IMAGE:-registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest}
+          echo "Infrastructure VM provisioned. Run ansible from /opt/secure-agent-workspace/cloud-init/ansible/"
+  containerDiskImage: registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:master-e4b3a21-20260707-093716
   operatingSystem: ""
   profile: c1.m4
   running: true
-  ports:
-    - name: ssh
-      port: 22
-      protocol: TCP
   mounts:
     - name: vars-secret
       serial: VARS01
       volume:
         secret:
           secretName: saw-infrastructure-vars
-    - name: persistent-state
-      serial: SAWINFRAPERSIST
-      volume:
-        persistentVolumeClaim:
-          claimName: saw-infrastructure-persist
-          readOnly: false

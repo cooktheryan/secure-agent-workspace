@@ -1,7 +1,7 @@
 apiVersion: cirrus.ibm.com/v1alpha1
 kind: Server
 metadata:
-  name: saw-integration
+  name: saw-integ
   namespace: ${NS}
   labels:
     app.kubernetes.io/name: secure-agent-workspace
@@ -10,7 +10,7 @@ spec:
   cloudInit:
     userData: |
       #cloud-config
-      hostname: saw-integration
+      hostname: saw-integ
       users:
         - default
         - name: openshell
@@ -32,14 +32,14 @@ spec:
           checkout=/opt/secure-agent-workspace
           install -d -m 0755 "${checkout}"
           curl -fsSL --retry 5 --retry-delay 10 \
-            https://github.com/rh-forge/secure-agent-workspace/archive/refs/heads/${BRANCH:-main}.tar.gz \
+            https://github.com/cooktheryan/secure-agent-workspace/archive/refs/heads/${BRANCH:-feat/cirrus-cloud-init}.tar.gz \
             | tar -xz --strip-components=1 -C "${checkout}"
           systemd-run --unit=saw-provision.service --setenv=HOME=/root \
             /usr/bin/bash -c 'exec /usr/bin/ansible-playbook -i localhost, \
-            /opt/secure-agent-workspace/cloud-init-new/ansible/integ.yml \
+            /opt/secure-agent-workspace/cloud-init/ansible/site.yml \
             -e @/etc/openshell-saw/vars.yml \
             > /var/log/saw-provision.log 2>&1'
-  containerDiskImage: ${CONTAINER_DISK_IMAGE:-registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:latest}
+  containerDiskImage: registry.cirrus.ibm.com/mici-golden-images/cirrus-rhel-9-golden-image:master-e4b3a21-20260707-093716
   operatingSystem: ""
   profile: c1.m4
   running: true
@@ -70,10 +70,10 @@ spec:
       serial: VARS01
       volume:
         secret:
-          secretName: saw-integration-vars
+          secretName: saw-integ-vars
     - name: persistent-state
       serial: SAWINTEGPERSIST
       volume:
         persistentVolumeClaim:
-          claimName: saw-integration-persist
+          claimName: saw-integ-persist
           readOnly: false

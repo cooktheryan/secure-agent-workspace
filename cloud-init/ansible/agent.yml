@@ -21,7 +21,8 @@
     gw_name: openshell
     mtls_gw: openshell-local
     openclaw_route_origin_cfg: "{{ openclaw_route_origin | mandatory }}"
-    openclaw_proxy_enabled_cfg: true
+    openclaw_proxy_enabled_cfg: "{{ openclaw_proxy_enabled | default(true) }}"
+    oidc_gateway_enabled_cfg: "{{ oidc_gateway_enabled | default(true) }}"
     openclaw_proxy_port_cfg: "{{ userport | mandatory }}"
     openclaw_forward_port_cfg: 18788
     openclaw_home_host_path: "{{ user_home }}/.local/share/openshell/openclaw-home"
@@ -780,6 +781,7 @@
       changed_when: true
 
     - name: Write final OIDC gateway config
+      when: oidc_gateway_enabled_cfg | bool
       ansible.builtin.copy:
         dest: /etc/openshell/gateway.toml
         mode: "0644"
@@ -798,6 +800,7 @@
           {% endif %}
 
     - name: Copy final gateway config to user config
+      when: oidc_gateway_enabled_cfg | bool
       ansible.builtin.copy:
         remote_src: true
         src: /etc/openshell/gateway.toml
@@ -807,6 +810,7 @@
         mode: "0644"
 
     - name: Ensure final OIDC gateway metadata dir
+      when: oidc_gateway_enabled_cfg | bool
       ansible.builtin.file:
         path: "{{ user_home }}/.config/openshell/gateways/{{ gw_name }}"
         state: directory
@@ -815,6 +819,7 @@
         mode: "0755"
 
     - name: Write final OIDC gateway metadata
+      when: oidc_gateway_enabled_cfg | bool
       ansible.builtin.copy:
         dest: "{{ user_home }}/.config/openshell/gateways/{{ gw_name }}/metadata.json"
         owner: "{{ user_name }}"
@@ -824,6 +829,7 @@
           {"name":"{{ gw_name }}","gateway_endpoint":"https://127.0.0.1:17670","is_remote":false,"gateway_port":17670,"auth_mode":"oidc","oidc_issuer":"{{ oidc_issuer }}","oidc_client_id":"{{ oidc_client_id }}","oidc_audience":"{{ oidc_client_id }}"}
 
     - name: Restart gateway in final OIDC mode
+      when: oidc_gateway_enabled_cfg | bool
       ansible.builtin.systemd:
         name: openshell-gateway.service
         scope: user
@@ -833,6 +839,7 @@
       environment: "{{ user_env }}"
 
     - name: Wait for final OIDC gateway to become active
+      when: oidc_gateway_enabled_cfg | bool
       ansible.builtin.command: "systemctl --user is-active openshell-gateway.service"
       become_user: "{{ user_name }}"
       environment: "{{ user_env }}"
